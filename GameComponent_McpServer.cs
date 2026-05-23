@@ -35,6 +35,7 @@ namespace RimWorldMCP
         public override void GameComponentUpdate()
         {
             base.GameComponentUpdate();
+            McpLog.Flush();
             McpCommandQueue.ProcessPending();
         }
 
