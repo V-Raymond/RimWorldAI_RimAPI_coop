@@ -76,6 +76,9 @@ namespace RimWorldMCP.Tools
                     var workLabel = workTypeDef.labelShort ?? workTypeDef.label ?? workTypeDefName;
 
                     // 执行设置
+                    if (priority != 0 && pawn.WorkTypeIsDisabled(workTypeDef))
+                        return ToolResult.Error($"{pawnShortName} 无法执行 {workLabel} 工作（被年龄或能力限制禁用）。");
+
                     pawn.workSettings.SetPriority(workTypeDef, priority);
 
                     var priorityText = priority switch
