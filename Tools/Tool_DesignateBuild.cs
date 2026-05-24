@@ -88,6 +88,9 @@ namespace RimWorldMCP.Tools
                         stuff = ThingDef.Named("Steel");
                     }
 
+                    if (stuff != null && def is ThingDef td2 && !td2.MadeFromStuff)
+                        return ToolResult.Error($"{def.label} ({thingDefName}) 不支持材料选择，请勿指定 stuff_defName。");
+
                     IntVec3 pos = new IntVec3(posX, 0, posY);
                     BuildableDef bdef = (BuildableDef)def;
 
