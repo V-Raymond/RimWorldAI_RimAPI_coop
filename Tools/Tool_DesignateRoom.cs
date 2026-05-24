@@ -130,14 +130,14 @@ namespace RimWorldMCP.Tools
                         return ToolResult.Error("没有当前地图，请先加载游戏存档。");
 
                     // 查找 Def
-                    ThingDef wallDef = ThingDef.Named(wallDefName);
+                    ThingDef wallDef = DefDatabase<ThingDef>.GetNamed(wallDefName, false);
                     if (wallDef == null)
                         return ToolResult.Error($"找不到墙体 ThingDef: {wallDefName}。请确认 DefName 拼写正确。");
 
                     ThingDef? doorDef = null;
                     if (doorCount > 0)
                     {
-                        doorDef = ThingDef.Named(doorDefName);
+                        doorDef = DefDatabase<ThingDef>.GetNamed(doorDefName, false);
                         if (doorDef == null)
                             return ToolResult.Error($"找不到门 ThingDef: {doorDefName}。请确认 DefName 拼写正确。");
                     }
@@ -145,7 +145,7 @@ namespace RimWorldMCP.Tools
                     ThingDef? floorDef = null;
                     if (floorCount > 0)
                     {
-                        floorDef = ThingDef.Named(floorDefName);
+                        floorDef = DefDatabase<ThingDef>.GetNamed(floorDefName, false);
                         if (floorDef == null)
                             return ToolResult.Error($"找不到地板 ThingDef: {floorDefName}。请确认 DefName 拼写正确。");
                     }

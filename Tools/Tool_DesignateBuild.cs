@@ -64,7 +64,7 @@ namespace RimWorldMCP.Tools
                     if (map == null)
                         return ToolResult.Error("没有当前地图，请先加载游戏存档。");
 
-                    ThingDef def = ThingDef.Named(thingDefName);
+                    ThingDef def = DefDatabase<ThingDef>.GetNamed(thingDefName, false);
                     if (def == null)
                         return ToolResult.Error($"找不到 ThingDef: {thingDefName}。请确认 DefName 拼写正确。");
                     if (!(def is BuildableDef))
@@ -82,7 +82,7 @@ namespace RimWorldMCP.Tools
                     ThingDef? stuff = null;
                     if (!string.IsNullOrEmpty(stuffDefName))
                     {
-                        stuff = ThingDef.Named(stuffDefName);
+                        stuff = DefDatabase<ThingDef>.GetNamed(stuffDefName, false);
                         if (stuff == null)
                             return ToolResult.Error($"找不到材料 ThingDef: {stuffDefName}");
                     }
