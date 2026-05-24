@@ -10,7 +10,7 @@ namespace RimWorldMCP
 {
     public enum ClientState { Disconnected, Connecting, Handshake, Ready }
 
-    public static class McpClient
+    public static class GatewayClient
     {
         private static ClientWebSocket? _ws;
         private static CancellationTokenSource? _cts;

@@ -38,7 +38,7 @@ namespace RimWorldMCP
             base.GameComponentUpdate();
             McpLog.Flush();
             McpCommandQueue.ProcessPending();
-            McpEventMonitor.Tick();
+            GatewayEventMonitor.Tick();
             McpOssUploader.ProcessPendingUploads();
             McpCommandQueue.ProcessDeferredCleanup();
         }
@@ -118,8 +118,8 @@ namespace RimWorldMCP
             if (settings == null || settings.BridgeType == 0 || string.IsNullOrEmpty(settings.BridgeUrl))
                 return;
 
-            await McpClient.Connect(settings.BridgeUrl, settings.BridgeToken, settings.BridgePassword);
-            if (McpClient.IsConnected)
+            await GatewayClient.Connect(settings.BridgeUrl, settings.BridgeToken, settings.BridgePassword);
+            if (GatewayClient.IsConnected)
                 McpLog.Info($"[bridge] 已连接到 {McpModSettings.BridgeTypeLabels[settings.BridgeType]}: {settings.BridgeUrl}");
         }
 

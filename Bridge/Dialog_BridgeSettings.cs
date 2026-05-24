@@ -28,7 +28,7 @@ namespace RimWorldMCP
             listing.Begin(inRect);
 
             // 状态
-            var state = McpClient.State switch
+            var state = GatewayClient.State switch
             {
                 ClientState.Disconnected => "未连接",
                 ClientState.Connecting => "建立连接...",
@@ -62,7 +62,7 @@ namespace RimWorldMCP
             _inputText = listing.TextEntry(_inputText);
             if (listing.ButtonText("发送") && !string.IsNullOrWhiteSpace(_inputText))
             {
-                _ = McpClient.SendMessage(_inputText);
+                _ = GatewayClient.SendMessage(_inputText);
                 _log += $"\n→ {_inputText}";
                 _inputText = "";
             }
@@ -70,7 +70,7 @@ namespace RimWorldMCP
             listing.End();
 
             // 从 Incoming 队列拉取消息
-            while (McpClient.Incoming.TryDequeue(out var msg))
+            while (GatewayClient.Incoming.TryDequeue(out var msg))
                 _log += $"\n← {msg}";
         }
     }

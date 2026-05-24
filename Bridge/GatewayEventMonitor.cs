@@ -4,7 +4,7 @@ using RimWorld;
 
 namespace RimWorldMCP
 {
-    public static class McpEventMonitor
+    public static class GatewayEventMonitor
     {
         private static int _nextCheckTick;
         private const int CheckIntervalTicks = 120;
@@ -15,7 +15,7 @@ namespace RimWorldMCP
 
         public static void Tick()
         {
-            if (!McpClient.IsConnected) return;
+            if (!GatewayClient.IsConnected) return;
             var tick = Find.TickManager?.TicksGame ?? 0;
             if (tick < _nextCheckTick) return;
             _nextCheckTick = tick + CheckIntervalTicks;
@@ -62,7 +62,7 @@ namespace RimWorldMCP
 
         private static void Send(string message)
         {
-            _ = McpClient.SendMessage(message);
+            _ = GatewayClient.SendMessage(message);
             McpLog.Info($"[event] {message}");
         }
     }
