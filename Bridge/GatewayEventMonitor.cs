@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using Verse;
 using RimWorld;
@@ -14,10 +15,13 @@ namespace RimWorldMCP
         private static int _lastColonistCount = -1;
         private static int _lastIdleCount = -1;
         private static HashSet<int> _seenLetterIds = new();
+        private static HashSet<string> _seenMessageIds = new();
+        private static FieldInfo? _msgStartingTimeField;
 
         public static void Reset()
         {
             _seenLetterIds.Clear();
+            _seenMessageIds.Clear();
         }
 
         public static void Tick()
@@ -33,10 +37,13 @@ namespace RimWorldMCP
             var colonists = PawnsFinder.AllMaps_FreeColonistsSpawned;
             int colonistCount = colonists.Count;
 
-            // === 1. Letter 通知监控（替代 raid/fire 轮询） ===
+            // === 1. Letter 通知监控 ===
             CheckNewLetters(map, colonists, colonistCount);
 
-            // === 2. 空闲殖民者检测 ===
+            // === 2. 右侧消息监控 ===
+            CheckNewMessages();
+
+            // === 3. 空闲殖民者检测 ===
             int idleCount = colonists.Count(c =>
                 (c.CurJob?.def?.defName == "Wait_MaintainPosture" || c.CurJob == null)
                 && !c.Downed && !c.Deathresting);
@@ -152,6 +159,77 @@ namespace RimWorldMCP
             if (def == LetterDefOf.Death) return "死亡";
             if (def == LetterDefOf.NeutralEvent) return "事件";
             return "通知";
+        }
+
+        // ========== 右侧消息监控 ==========
+
+        private static void CheckNewMessages()
+        {
+            var archivables = Find.Archive?.ArchivablesListForReading;
+            if (archivables == null) return;
+
+            var currentIds = new HashSet<string>();
+            var newMessages = new List<Verse.Message>();
+
+            foreach (var a in archivables)
+            {
+                if (a is not Verse.Message msg) continue;
+                string id = ((ILoadReferenceable)msg).GetUniqueLoadID();
+                currentIds.Add(id);
+                if (!_seenMessageIds.Contains(id))
+                    newMessages.Add(msg);
+            }
+
+            // 首轮初始化：标记所有已有消息为已见
+            if (_seenMessageIds.Count == 0)
+            {
+                _seenMessageIds = currentIds;
+                return;
+            }
+
+            if (newMessages.Count > 0)
+            {
+                foreach (var msg in newMessages)
+                {
+                    string id = ((ILoadReferenceable)msg).GetUniqueLoadID();
+                    _seenMessageIds.Add(id);
+                    if (string.IsNullOrEmpty(msg.text)) continue;
+
+                    string label = GetMessageTypeLabel(msg.def);
+                    string text = msg.text.Length > 300
+                        ? msg.text.Substring(0, 297) + "..."
+                        : msg.text;
+                    GatewayMessageQueue.Enqueue(MessageCategory.Alert, $"[{label}] {text}");
+                    Find.Archive!.Remove(msg);
+                    ExpireLiveMessage(msg);
+                }
+            }
+
+            // 清理已归档的消息 ID
+            _seenMessageIds.IntersectWith(currentIds);
+        }
+
+        private static string GetMessageTypeLabel(MessageTypeDef def)
+        {
+            if (def == MessageTypeDefOf.ThreatBig) return "大威胁";
+            if (def == MessageTypeDefOf.ThreatSmall) return "小威胁";
+            if (def == MessageTypeDefOf.PawnDeath) return "角色死亡";
+            if (def == MessageTypeDefOf.NegativeHealthEvent) return "健康事件";
+            if (def == MessageTypeDefOf.NegativeEvent) return "负面";
+            if (def == MessageTypeDefOf.NeutralEvent) return "事件";
+            if (def == MessageTypeDefOf.PositiveEvent) return "正面";
+            if (def == MessageTypeDefOf.TaskCompletion) return "完成";
+            if (def == MessageTypeDefOf.SituationResolved) return "状态解除";
+            if (def == MessageTypeDefOf.RejectInput) return "拒绝";
+            if (def == MessageTypeDefOf.CautionInput) return "警告";
+            return def?.defName ?? "消息";
+        }
+
+        private static void ExpireLiveMessage(Verse.Message msg)
+        {
+            _msgStartingTimeField ??= typeof(Verse.Message).GetField("startingTime",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            _msgStartingTimeField?.SetValue(msg, -99999f);
         }
 
         // ========== 消息构建 ==========
