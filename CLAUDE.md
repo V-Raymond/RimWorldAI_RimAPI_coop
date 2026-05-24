@@ -67,9 +67,9 @@ RimWorld 返回主菜单时 `Game.Dispose()` 不通知 GameComponent，导致上
 
 ## OpenClaw Gateway 桥接
 
-McpClient 作为 WebSocket 客户端连接 OpenClaw Gateway（默认 `ws://127.0.0.1:18789`），支持双模式握手。
+McpClient 作为 WebSocket 客户端连接 OpenClaw Gateway（默认 `ws://127.0.0.1:18789`）。
 
-### 连接流程（模式 A — Gateway 真实协议）
+### 连接流程
 
 ```
 1. WebSocket 连接  ws://127.0.0.1:18789
@@ -82,7 +82,7 @@ McpClient 作为 WebSocket 客户端连接 OpenClaw Gateway（默认 `ws://127.0
 
 **Step 1: 收到 challenge**
 ```json
-{"type":"evt","event":"connect.challenge","payload":{"nonce":"xxx"}}
+{"type":"event","event":"connect.challenge","payload":{"nonce":"xxx","ts":1737264000000}}
 ```
 
 **Step 2: 发送 connect RPC**
