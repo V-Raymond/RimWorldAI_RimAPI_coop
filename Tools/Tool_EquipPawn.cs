@@ -19,7 +19,6 @@ namespace RimWorldMCP.Tools
             properties = new
             {
                 colonist_name = new { type = "string", description = "殖民者名称" },
-                thing_label = new { type = "string", description = "装备标签/名称，模糊匹配" },
                 thing_defName = new { type = "string", description = "装备 DefName，精确匹配" },
                 equip_type = new { type = "string", description = "装备类型", @enum = new[] { "weapon", "apparel" } }
             },
@@ -37,10 +36,6 @@ namespace RimWorldMCP.Tools
             if (string.IsNullOrWhiteSpace(colonistName))
                 return ToolResult.Error("colonist_name 不能为空");
 
-            string thingLabel = "";
-            if (args.Value.TryGetProperty("thing_label", out var jLabel))
-                thingLabel = jLabel.GetString() ?? "";
-
             string thingDefName = "";
             if (args.Value.TryGetProperty("thing_defName", out var jDef))
                 thingDefName = jDef.GetString() ?? "";
@@ -53,8 +48,8 @@ namespace RimWorldMCP.Tools
                     return ToolResult.Error($"不支持的装备类型: {equipType}，请使用 weapon 或 apparel");
             }
 
-            if (string.IsNullOrEmpty(thingLabel) && string.IsNullOrEmpty(thingDefName))
-                return ToolResult.Error("需要提供 thing_label 或 thing_defName 来指定要装备的物品");
+            if (string.IsNullOrEmpty(thingDefName))
+                return ToolResult.Error("需要提供 thing_defName 来指定要装备的物品");
 
             // 所有游戏 API 访问通过 DispatchAsync 调度到主线程
             return await McpCommandQueue.DispatchAsync(() =>
@@ -94,10 +89,10 @@ namespace RimWorldMCP.Tools
                         return ToolResult.Error($"地图上没有任何可用的{itemTypeLabel}。");
 
                     // 匹配物品
-                    Thing? matched = FindMatchingThing(candidates, thingLabel, thingDefName);
+                    Thing? matched = FindMatchingThing(candidates, thingDefName);
                     if (matched == null)
                     {
-                        string searchKey = !string.IsNullOrEmpty(thingLabel) ? thingLabel : thingDefName;
+                        string searchKey = thingDefName;
                         // 列出可用物品帮助用户
                         var available = candidates
                             .Select(t => $"{t.Label} ({t.def.defName})")
@@ -177,31 +172,16 @@ namespace RimWorldMCP.Tools
         }
 
         /// <summary>
-        /// 在地图物品列表中按 label（模糊）或 defName（精确）查找匹配的物品。
-        /// 优先使用 defName 精确匹配，其次使用 label 模糊匹配。
+        /// 在地图物品列表中按 defName 精确匹配查找物品。
         /// </summary>
-        private static Thing? FindMatchingThing(List<Thing> things, string label, string defName)
+        private static Thing? FindMatchingThing(List<Thing> things, string defName)
         {
             if (things == null || things.Count == 0) return null;
 
-            // 优先: defName 精确匹配
             if (!string.IsNullOrEmpty(defName))
             {
                 var exact = things.FirstOrDefault(t => t.def.defName == defName);
                 if (exact != null) return exact;
-            }
-
-            // 其次: 物品 Label 模糊匹配
-            if (!string.IsNullOrEmpty(label))
-            {
-                var byItemLabel = things.FirstOrDefault(t =>
-                    t.Label != null && t.Label.IndexOf(label, StringComparison.OrdinalIgnoreCase) >= 0);
-                if (byItemLabel != null) return byItemLabel;
-
-                // 再次: def.label 模糊匹配
-                var byDefLabel = things.FirstOrDefault(t =>
-                    t.def.label != null && t.def.label.IndexOf(label, StringComparison.OrdinalIgnoreCase) >= 0);
-                if (byDefLabel != null) return byDefLabel;
             }
 
             return null;

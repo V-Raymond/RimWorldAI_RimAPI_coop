@@ -20,7 +20,6 @@ namespace RimWorldMCP.Tools
             {
                 center_x = new { type = "integer", description = "房间中心的 X 坐标" },
                 center_y = new { type = "integer", description = "房间中心的 Y 坐标" },
-                center_z = new { type = "integer", description = "房间中心的 Z 坐标" },
                 width = new { type = "integer", description = "房间内部宽度（不含墙），默认 13", @default = 13 },
                 height = new { type = "integer", description = "房间内部高度（不含墙），默认 13", @default = 13 },
                 wall_defName = new { type = "string", description = "墙体材料 DefName，默认 Steel", @default = "Steel" },
@@ -28,7 +27,7 @@ namespace RimWorldMCP.Tools
                 door_defName = new { type = "string", description = "门的 DefName，默认 Door", @default = "Door" },
                 floor_defName = new { type = "string", description = "地板 DefName，可选" }
             },
-            required = new[] { "center_x", "center_y", "center_z" }
+            required = new[] { "center_x", "center_y" }
         });
 
         public async Task<ToolResult> ExecuteAsync(JsonElement? args)
@@ -39,8 +38,7 @@ namespace RimWorldMCP.Tools
                 return ToolResult.Error("缺少必填参数: center_x");
             if (!args.Value.TryGetProperty("center_y", out var jY) || !jY.TryGetInt32(out var centerY))
                 return ToolResult.Error("缺少必填参数: center_y");
-            if (!args.Value.TryGetProperty("center_z", out var jZ) || !jZ.TryGetInt32(out var centerZ))
-                return ToolResult.Error("缺少必填参数: center_z");
+            int centerZ = 0; // RimWorld 是 2D 地图，Z 始终为 0
 
             int width = 13, height = 13;
             if (args.Value.TryGetProperty("width", out var jW) && jW.TryGetInt32(out var wv) && wv > 0) width = wv;

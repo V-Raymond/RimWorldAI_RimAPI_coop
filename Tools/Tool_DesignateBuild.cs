@@ -19,11 +19,10 @@ namespace RimWorldMCP.Tools
                 thingDef_name = new { type = "string", description = "要建造的物品 DefName。常用: Wall(墙), Door(门), TableSmithy(锻造台), WoodFloor(木地板), Bed(床), StandingLamp(立灯)" },
                 pos_x = new { type = "integer", description = "X 坐标" },
                 pos_y = new { type = "integer", description = "Y 坐标" },
-                pos_z = new { type = "integer", description = "Z 坐标" },
                 rotation = new { type = "string", description = "旋转方向", @enum = new[] { "North", "East", "South", "West" } },
                 stuff_defName = new { type = "string", description = "建筑材料 DefName，如 Steel, WoodLog" }
             },
-            required = new[] { "thingDef_name", "pos_x", "pos_y", "pos_z" }
+            required = new[] { "thingDef_name", "pos_x", "pos_y" }
         });
 
         public async Task<ToolResult> ExecuteAsync(JsonElement? args)
@@ -36,9 +35,6 @@ namespace RimWorldMCP.Tools
                 return ToolResult.Error("缺少必填参数: pos_x");
             if (!args.Value.TryGetProperty("pos_y", out var jY) || !jY.TryGetInt32(out var posY))
                 return ToolResult.Error("缺少必填参数: pos_y");
-            if (!args.Value.TryGetProperty("pos_z", out var jZ) || !jZ.TryGetInt32(out var posZ))
-                return ToolResult.Error("缺少必填参数: pos_z");
-
             string thingDefName = jDefName.GetString() ?? "";
             if (string.IsNullOrWhiteSpace(thingDefName))
                 return ToolResult.Error("thingDef_name 不能为空");
@@ -48,6 +44,8 @@ namespace RimWorldMCP.Tools
             {
                 rotationStr = jRot.GetString() ?? "North";
             }
+
+            int posZ = 0; // RimWorld 是 2D 地图，Z 始终为 0
 
             string stuffDefName = "";
             if (args.Value.TryGetProperty("stuff_defName", out var jStuff))
