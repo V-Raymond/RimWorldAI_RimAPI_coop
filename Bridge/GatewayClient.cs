@@ -132,9 +132,7 @@ namespace RimWorldMCP
             rng.GetBytes(seed);
             _deviceKey = new Ed25519PrivateKeyParameters(seed, 0);
             var pubKey = _deviceKey.GeneratePublicKey();
-            var pubKeyDer = pubKey.GetEncoded(); // SPKI DER: 12-byte prefix + 32-byte raw key
-            _devicePublicKeyRaw = new byte[32];
-            Array.Copy(pubKeyDer, 12, _devicePublicKeyRaw, 0, 32);
+            _devicePublicKeyRaw = pubKey.GetEncoded(); // BouncyCastle 直接返回 32 字节 raw key
 
             // base64url: raw 32 bytes
             _devicePublicKeyBase64Url = Base64UrlEncode(_devicePublicKeyRaw);
