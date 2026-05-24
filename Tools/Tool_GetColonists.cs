@@ -64,22 +64,33 @@ namespace RimWorldMCP.Tools
                     // 健康摘要
                     string healthSummary = GetHealthSummary(pawn);
 
+                    // 特性
+                    string traitsStr = GetTraits(pawn);
+
                     // 技能 Top 3
                     string skillsStr = GetTopSkills(pawn);
 
                     // 装备
                     string equipmentStr = GetEquipmentSummary(pawn);
 
+                    // 当前活动
+                    string currentActivity = GetCurrentActivity(pawn);
+
                     // 工作优先级
                     string workPriorities = GetWorkPriorities(pawn);
 
+                    // 意识形态角色和头衔
+                    string ideoAndTitle = GetIdeoAndTitle(pawn);
+
                     sb.AppendLine();
                     sb.AppendLine($"### {name}");
-                    sb.AppendLine($"- 年龄: {age} | 性别: {gender} | 心情: {moodStr} ({moodLabel})");
-                    sb.AppendLine($"- 健康: {healthSummary}");
-                    sb.AppendLine($"- 技能: {skillsStr}");
-                    sb.AppendLine($"- 装备: {equipmentStr}");
-                    sb.AppendLine($"- 工作优先级: {workPriorities}");
+                    sb.AppendLine($"- {name} ({age}岁, {gender}) | 心情: {moodStr} ({moodLabel}) | 健康: {healthSummary}");
+                    sb.AppendLine($"  特性: {traitsStr}");
+                    sb.AppendLine($"  技能: {skillsStr}");
+                    sb.AppendLine($"  装备: {equipmentStr}");
+                    sb.AppendLine($"  当前: {currentActivity} | 工作: {workPriorities}");
+                    if (!string.IsNullOrEmpty(ideoAndTitle))
+                        sb.AppendLine($"  {ideoAndTitle}");
                 }
 
                 return ToolResult.Success(sb.ToString());
@@ -204,6 +215,46 @@ namespace RimWorldMCP.Tools
                 return activePriorities.Count > 0 ? string.Join(" ", top) : "未设置";
             }
             catch (Exception) { return "无法读取"; }
+        }
+
+        private static string GetTraits(Pawn pawn)
+        {
+            try
+            {
+                var allTraits = pawn.story?.traits?.allTraits;
+                if (allTraits == null || allTraits.Count == 0) return "无";
+                var labels = allTraits.Where(t => !t.Suppressed).Select(t => t.Label);
+                var list = labels.ToList();
+                return list.Count > 0 ? string.Join(", ", list) : "无";
+            }
+            catch (Exception) { return "无法读取"; }
+        }
+
+        private static string GetCurrentActivity(Pawn pawn)
+        {
+            try
+            {
+                var curJob = pawn.CurJob;
+                if (curJob == null) return "空闲";
+                return curJob.def?.label ?? "空闲";
+            }
+            catch (Exception) { return "空闲"; }
+        }
+
+        private static string GetIdeoAndTitle(Pawn pawn)
+        {
+            try
+            {
+                var parts = new List<string>();
+                var role = pawn.Ideo?.GetRole(pawn);
+                if (role != null)
+                    parts.Add($"意识形态角色: {role.Label}");
+                var title = pawn.royalty?.MostSeniorTitle;
+                if (title != null)
+                    parts.Add($"头衔: {title.def?.label}");
+                return string.Join(" | ", parts);
+            }
+            catch (Exception) { return ""; }
         }
     }
 }

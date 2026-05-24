@@ -32,19 +32,47 @@ namespace RimWorldMCP.Tools
                 // === 武器装备 ===
                 sb.AppendLine("### 武器装备");
                 sb.AppendLine();
-                sb.AppendLine("| 殖民者 | 主武器 | 护甲 | 征召 |");
-                sb.AppendLine("|--------|--------|------|------|");
+                sb.AppendLine("| 殖民者 | 射击 | 近战 | 主武器 | 护甲 | 征召 |");
+                sb.AppendLine("|--------|------|------|--------|------|------|");
 
                 int rangedCount = 0;
                 int meleeCount = 0;
                 int unarmedCount = 0;
                 int armoredCount = 0;
+                int combatIncapableCount = 0;
 
                 foreach (var pawn in colonists)
                 {
                     var name = pawn.Name?.ToStringShort ?? pawn.LabelShortCap;
                     var drafted = pawn.Drafted;
                     var draftedText = drafted ? "已征召" : "未征召";
+
+                    // 战斗能力检查
+                    bool isCombatIncapable = pawn.WorkTagIsDisabled(WorkTags.Violent);
+                    if (isCombatIncapable)
+                    {
+                        name += " (非战斗人员)";
+                        combatIncapableCount++;
+                    }
+
+                    // 射击和近战技能
+                    string shootingSkill = "-";
+                    string meleeSkill = "-";
+                    if (pawn.skills != null)
+                    {
+                        try
+                        {
+                            var shooting = pawn.skills.GetSkill(SkillDefOf.Shooting);
+                            shootingSkill = shooting != null ? shooting.Level.ToString() : "-";
+                        }
+                        catch (Exception) { }
+                        try
+                        {
+                            var melee = pawn.skills.GetSkill(SkillDefOf.Melee);
+                            meleeSkill = melee != null ? melee.Level.ToString() : "-";
+                        }
+                        catch (Exception) { }
+                    }
 
                     // 主武器
                     var weapon = "-";
@@ -57,15 +85,19 @@ namespace RimWorldMCP.Tools
                         if (quality != null)
                             weapon += $" ({quality.Quality.GetLabel()})";
 
-                        // 判断远程还是近战
-                        if (primary.def?.IsRangedWeapon == true)
-                            rangedCount++;
-                        else if (primary.def?.IsMeleeWeapon == true)
-                            meleeCount++;
+                        // 判断远程还是近战（仅战斗人员计入统计）
+                        if (!isCombatIncapable)
+                        {
+                            if (primary.def?.IsRangedWeapon == true)
+                                rangedCount++;
+                            else if (primary.def?.IsMeleeWeapon == true)
+                                meleeCount++;
+                        }
                     }
                     else
                     {
-                        unarmedCount++;
+                        if (!isCombatIncapable)
+                            unarmedCount++;
                     }
 
                     // 护甲
@@ -91,7 +123,30 @@ namespace RimWorldMCP.Tools
 
                     var armorText = armorParts.Count > 0 ? string.Join(", ", armorParts) : "无";
 
-                    sb.AppendLine($"| {name} | {weapon} | {armorText} | {draftedText} |");
+                    sb.AppendLine($"| {name} | {shootingSkill} | {meleeSkill} | {weapon} | {armorText} | {draftedText} |");
+                }
+
+                // === 护甲防御力 ===
+                sb.AppendLine();
+                sb.AppendLine("### 护甲防御力");
+                sb.AppendLine();
+                sb.AppendLine("| 殖民者 | 利刃 | 钝击 | 热能 |");
+                sb.AppendLine("|--------|------|------|------|");
+
+                foreach (var pawn in colonists)
+                {
+                    var name = pawn.Name?.ToStringShort ?? pawn.LabelShortCap;
+                    try
+                    {
+                        float sharp = pawn.GetStatValue(StatDefOf.ArmorRating_Sharp, true, -1);
+                        float blunt = pawn.GetStatValue(StatDefOf.ArmorRating_Blunt, true, -1);
+                        float heat = pawn.GetStatValue(StatDefOf.ArmorRating_Heat, true, -1);
+                        sb.AppendLine($"| {name} | {sharp:P0} | {blunt:P0} | {heat:P0} |");
+                    }
+                    catch (Exception)
+                    {
+                        sb.AppendLine($"| {name} | - | - | - |");
+                    }
                 }
 
                 // === 战斗力评估 ===
@@ -102,6 +157,8 @@ namespace RimWorldMCP.Tools
                 sb.AppendLine($"- 近战单位: {meleeCount} 人");
                 sb.AppendLine($"- 无武器: {unarmedCount} 人");
                 sb.AppendLine($"- 有护甲: {armoredCount} 人");
+                if (combatIncapableCount > 0)
+                    sb.AppendLine($"- 非战斗人员: {combatIncapableCount} 人");
 
                 // === 阵地设施 ===
                 sb.AppendLine();
@@ -120,6 +177,12 @@ namespace RimWorldMCP.Tools
                 });
                 var totalTurrets = turrets.Count;
 
+                // 统计迫击炮
+                var mortars = map.listerBuildings.AllBuildingsColonistOfClass<Building_TurretGun>()
+                    .Where(t => t.def.building.IsMortar)
+                    .ToList();
+                int totalMortars = mortars.Count;
+
                 // 统计陷阱
                 var traps = map.listerBuildings.AllBuildingsColonistOfClass<Building_Trap>();
                 var totalTraps = traps?.Count() ?? 0;
@@ -129,6 +192,7 @@ namespace RimWorldMCP.Tools
                 var totalSandbags = sandbags?.Count ?? 0;
 
                 sb.AppendLine($"- 炮塔: {totalTurrets} 座 (已供电: {poweredTurrets})");
+                sb.AppendLine($"- 迫击炮: {totalMortars} 座");
                 sb.AppendLine($"- 陷阱: {totalTraps} 个");
                 sb.AppendLine($"- 沙袋: {totalSandbags} 格");
 
@@ -137,19 +201,24 @@ namespace RimWorldMCP.Tools
                 sb.AppendLine("### 防御建议");
                 sb.AppendLine();
 
+                int combatCapableCount = colonists.Count - combatIncapableCount;
+
                 var recommendations = new List<string>();
 
                 if (unarmedCount > 0)
                     recommendations.Add($"有 {unarmedCount} 名殖民者未装备武器，建议配备基础远程武器。");
 
-                if (rangedCount < colonists.Count * 0.6f)
+                if (combatCapableCount > 0 && rangedCount < combatCapableCount * 0.6f)
                     recommendations.Add("远程火力覆盖不足，建议提升远程战斗人员比例。");
 
-                if (armoredCount < colonists.Count * 0.5f)
+                if (combatCapableCount > 0 && armoredCount < combatCapableCount * 0.5f)
                     recommendations.Add("多数殖民者缺少护甲防护，建议制作简易头盔和防弹背心。");
 
                 if (totalTurrets == 0)
                     recommendations.Add("当前无炮塔防御，建议在阵地部署至少2-3座炮塔。");
+
+                if (totalMortars == 0)
+                    recommendations.Add("当前无迫击炮，建议建造至少1座迫击炮用于远程轰击。");
 
                 if (totalTraps == 0)
                     recommendations.Add("当前无陷阱，建议在关键通道布设陷阱减缓敌人推进。");

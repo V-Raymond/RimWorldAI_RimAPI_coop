@@ -72,6 +72,25 @@ namespace RimWorldMCP.Tools
                             int pct = (int)(curLevel * 100);
                             sb.AppendLine($"- {label} {bar} {pct}%");
 
+                            // 如果是心情需求，显示想法详情
+                            if (need is Need_Mood needMood && needMood.thoughts != null)
+                            {
+                                try
+                                {
+                                    var allMoodThoughts = new List<Thought>();
+                                    needMood.thoughts.GetAllMoodThoughts(allMoodThoughts);
+                                    if (allMoodThoughts.Count > 0)
+                                    {
+                                        var top3 = allMoodThoughts
+                                            .OrderByDescending(t => Math.Abs(t.MoodOffset()))
+                                            .Take(3)
+                                            .Select(t => $"{t.LabelCap}{(int)t.MoodOffset():+#;-#;0}");
+                                        sb.AppendLine($"    想法: {string.Join(", ", top3)}");
+                                    }
+                                }
+                                catch (Exception) { }
+                            }
+
                             // 标记过低的项
                             if (curLevel < 0.25f)
                                 issues.Add($"{label}极低({pct}%)");

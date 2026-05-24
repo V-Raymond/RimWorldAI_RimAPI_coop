@@ -75,21 +75,53 @@ namespace RimWorldMCP.Tools
                         }
                         var foodTotal = resources.Where(kv => kv.Key.IsNutritionGivingIngestible || kv.Key.ingestible?.foodType != null).Sum(kv => kv.Value);
                         if (foodTotal > 0) sb.AppendLine($"- 食物总计: {foodTotal}份");
+
+                        // 食物储备天数估算
+                        float totalFoodNutrition = 0f;
+                        foreach (var kvp in resources)
+                        {
+                            var def = kvp.Key;
+                            if (def.IsNutritionGivingIngestible && def.ingestible?.HumanEdible == true && def.ingestible?.foodType != FoodTypeFlags.Tree)
+                                totalFoodNutrition += kvp.Value * (def.ingestible?.CachedNutrition ?? 0f);
+                        }
+                        int colonistCount = PawnsFinder.AllMaps_FreeColonistsSpawned?.Count ?? 0;
+                        if (colonistCount > 0 && totalFoodNutrition > 0)
+                        {
+                            float dailyNeed = colonistCount * 1.6f; // pawns need ~1.6 nutrition per day
+                            int daysWorth = (int)(totalFoodNutrition / dailyNeed);
+                            sb.AppendLine($"- 食物储备: 约 {daysWorth} 天");
+                        }
                     }
                 }
 
-                // 电力
-                if (map != null)
+                // 电力数据
+                sb.AppendLine();
+                sb.AppendLine("## 电力");
+                if (map?.powerNetManager?.AllNetsListForReading != null)
                 {
-                    var powerNets = map.powerNetManager?.AllNetsListForReading;
-                    if (powerNets != null)
+                    float totalGenerated = 0f, totalUsed = 0f, totalStored = 0f, totalStoredMax = 0f;
+                    foreach (var net in map.powerNetManager.AllNetsListForReading)
                     {
-                        foreach (var net in powerNets)
+                        foreach (var comp in net.powerComps)
                         {
-                            // PowerNet has CurrentEnergyGainRate(), CurrentEnergyUsage()
-                            // We approximate by looking at buildings
+                            if (comp.PowerOutput > 0) totalGenerated += comp.PowerOutput;
+                            else if (comp.PowerOutput < 0) totalUsed += -comp.PowerOutput;
+                        }
+                        foreach (var batt in net.batteryComps)
+                        {
+                            totalStored += batt.StoredEnergy;
+                            totalStoredMax += batt.Props.storedEnergyMax;
                         }
                     }
+                    sb.AppendLine($"- 发电: {totalGenerated / 1000f:F1} kW");
+                    sb.AppendLine($"- 用电: {totalUsed / 1000f:F1} kW");
+                    if (totalStoredMax > 0)
+                        sb.AppendLine($"- 储电: {totalStored / 1000f:F1} / {totalStoredMax / 1000f:F1} kWd ({totalStored / totalStoredMax * 100f:F0}%)");
+                    sb.AppendLine($"- 电力平衡: {(totalGenerated - totalUsed >= 0 ? "盈余" : "赤字")} {Math.Abs(totalGenerated - totalUsed) / 1000f:F1} kW");
+                }
+                else
+                {
+                    sb.AppendLine("- 无电网数据");
                 }
 
                 // 研究进度
