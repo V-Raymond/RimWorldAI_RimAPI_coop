@@ -7,7 +7,7 @@ namespace RimWorldMCP
     {
         private McpModSettings _settings;
         private string _inputText = "";
-        private string _status = "";
+        private string _log = "";
         private Vector2 _scrollPos;
 
         public Dialog_BridgeSettings(McpModSettings settings)
@@ -20,38 +20,57 @@ namespace RimWorldMCP
             resizeable = false;
         }
 
-        public override Vector2 InitialSize => new Vector2(500f, 350f);
+        public override Vector2 InitialSize => new Vector2(500f, 400f);
 
         public override void DoWindowContents(Rect inRect)
         {
             var listing = new Listing_Standard();
             listing.Begin(inRect);
 
-            Text.Font = GameFont.Medium;
-            listing.Label("MCP 桥接消息");
-            Text.Font = GameFont.Small;
+            // 状态
+            var state = McpClient.State switch
+            {
+                ClientState.Disconnected => "未连接",
+                ClientState.Connecting => "连接中...",
+                ClientState.Connected => "已连接 (等待 Ready)",
+                ClientState.Ready => "就绪",
+                _ => "未知"
+            };
+            listing.Label($"状态: {state}");
 
-            // 连接状态
-            var statusLabel = McpClient.IsConnected
-                ? $"已连接: {McpModSettings.BridgeTypeLabels[_settings.BridgeType]}"
-                : (_settings.BridgeType > 0 ? "未连接" : "未配置");
-            listing.Label(statusLabel);
+            listing.Gap(6f);
 
-            if (!string.IsNullOrEmpty(_status))
-                listing.Label(_status);
+            // 消息日志
+            listing.Label("消息:");
+            var logRect = listing.GetRect(180f);
+            Widgets.DrawBox(logRect);
+            _scrollPos = GUI.BeginScrollView(logRect, _scrollPos, new Rect(0, 0, logRect.width - 20, 2000));
+            var logY = 0f;
+            foreach (var line in _log.Split('\n'))
+            {
+                var h = Text.CalcHeight(line, logRect.width - 30);
+                Widgets.Label(new Rect(5, logY, logRect.width - 30, h), line);
+                logY += h + 2;
+            }
+            GUI.EndScrollView();
 
-            listing.Gap(12f);
+            listing.Gap(6f);
 
-            // —— 输入 ——
-            listing.Label("发送消息");
+            // 输入
+            listing.Label("发送:");
             _inputText = listing.TextEntry(_inputText);
             if (listing.ButtonText("发送") && !string.IsNullOrWhiteSpace(_inputText))
             {
                 _ = McpClient.SendMessage(_inputText);
+                _log += $"\n→ {_inputText}";
                 _inputText = "";
             }
 
             listing.End();
+
+            // 从 Incoming 队列拉取消息
+            while (McpClient.Incoming.TryDequeue(out var msg))
+                _log += $"\n← {msg}";
         }
     }
 }
