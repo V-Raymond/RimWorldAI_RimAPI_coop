@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 using Verse;
 
@@ -8,7 +9,6 @@ namespace RimWorldMCP
         private McpModSettings _settings;
         private string _inputText = "";
         private string _log = "";
-        private Vector2 _scrollPos;
 
         public Dialog_BridgeSettings(McpModSettings settings)
         {
@@ -42,17 +42,18 @@ namespace RimWorldMCP
 
             // 消息日志
             listing.Label("消息:");
-            var logRect = listing.GetRect(180f);
+            var logRect = listing.GetRect(160f);
             Widgets.DrawBox(logRect);
-            _scrollPos = GUI.BeginScrollView(logRect, _scrollPos, new Rect(0, 0, logRect.width - 20, 2000));
-            var logY = 0f;
-            foreach (var line in _log.Split('\n'))
+            var lines = _log.Split('\n');
+            var shown = lines.Length > 15 ? lines.Skip(lines.Length - 15) : lines;
+            var y = 2f;
+            foreach (var line in shown)
             {
-                var h = Text.CalcHeight(line, logRect.width - 30);
-                Widgets.Label(new Rect(5, logY, logRect.width - 30, h), line);
-                logY += h + 2;
+                var h = Text.CalcHeight(line, logRect.width - 10);
+                Widgets.Label(new Rect(5, y, logRect.width - 10, h), line);
+                y += h + 1;
+                if (y > 155) break;
             }
-            GUI.EndScrollView();
 
             listing.Gap(6f);
 

@@ -118,8 +118,8 @@ namespace RimWorldMCP
             if (settings == null || settings.BridgeType == 0 || string.IsNullOrEmpty(settings.BridgeUrl))
                 return;
 
-            bool ok = await McpClient.Connect(settings.BridgeUrl, settings.BridgeToken, settings.BridgePassword);
-            if (ok)
+            await McpClient.Connect(settings.BridgeUrl, settings.BridgeToken, settings.BridgePassword);
+            if (McpClient.IsConnected)
                 McpLog.Info($"[bridge] 已连接到 {McpModSettings.BridgeTypeLabels[settings.BridgeType]}: {settings.BridgeUrl}");
         }
 
