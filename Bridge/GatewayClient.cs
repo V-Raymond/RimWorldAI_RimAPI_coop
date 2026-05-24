@@ -22,6 +22,11 @@ namespace RimWorldMCP
         private static string _password = "";
         private static int _rpcSeq;
 
+        // agent.wait 追踪：发送 agent RPC 后，用 agent.wait 等 run 完成
+        private static string? _inFlightAgentRpcId;       // 匹配 agent 的 res ack
+        private static string? _activeAgentWaitId;         // 匹配 agent.wait 的 res
+        private static volatile bool _agentRunCompleted;   // agent.wait 返回 completed/error 时置 true
+
         // 设备身份（ED25519），首次使用时生成
         private static Ed25519PrivateKeyParameters? _deviceKey;
         private static string? _deviceId;
@@ -91,12 +96,32 @@ namespace RimWorldMCP
         public static async Task SendMessage(string text)
         {
             if (!IsReady) return;
-            await SendRpc("agent", new
+            var id = (++_rpcSeq).ToString();
+            await SendJson(new
             {
-                message = text,
-                sessionId = "rimworld",
-                idempotencyKey = Guid.NewGuid().ToString("N")
+                type = "req",
+                id,
+                method = "agent",
+                @params = new
+                {
+                    message = text,
+                    sessionId = "rimworld",
+                    idempotencyKey = Guid.NewGuid().ToString("N")
+                }
             });
+            _inFlightAgentRpcId = id;
+            _agentRunCompleted = false;
+            _activeAgentWaitId = null;
+        }
+
+        public static bool IsAgentRpcDone =>
+            _inFlightAgentRpcId == null || _agentRunCompleted;
+
+        public static void ClearInFlightAgentRpc()
+        {
+            _inFlightAgentRpcId = null;
+            _activeAgentWaitId = null;
+            _agentRunCompleted = false;
         }
 
         public static async Task SendRpc(string method, object? payload = null)
@@ -104,6 +129,18 @@ namespace RimWorldMCP
             if (!IsReady) return;
             var id = (++_rpcSeq).ToString();
             await SendJson(new { type = "req", id, method, @params = payload });
+        }
+
+        private static async Task SendAgentWait(string id, string runId)
+        {
+            if (_ws?.State != WebSocketState.Open) return;
+            await SendJson(new
+            {
+                type = "req",
+                id,
+                method = "agent.wait",
+                @params = new { runId, timeoutMs = 120000 }
+            });
         }
 
         public static async Task Ping()
@@ -117,6 +154,9 @@ namespace RimWorldMCP
             _shuttingDown = true;
             _cts?.Cancel();
             _state = ClientState.Disconnected;
+            _inFlightAgentRpcId = null;
+            _activeAgentWaitId = null;
+            _agentRunCompleted = false;
             try { _ws?.Dispose(); } catch { }
             _ws = null;
         }
@@ -237,7 +277,7 @@ namespace RimWorldMCP
                     }
 
                     Incoming.Enqueue(text);
-                    McpLog.Info($"[ws] ← {Truncate(text)}");
+                    McpLog.Info($"[ws] ← {text}");
 
                     // 按官方协议解析帧类型: req(res)/res/event/ping
                     try
@@ -267,6 +307,7 @@ namespace RimWorldMCP
                                 break;
 
                             case "res":
+                                // hello-ok 检测
                                 if (root.TryGetProperty("ok", out var ok) && ok.GetBoolean()
                                     && root.TryGetProperty("payload", out var payload)
                                     && payload.TryGetProperty("type", out var pt) && pt.GetString() == "hello-ok")
@@ -277,6 +318,32 @@ namespace RimWorldMCP
 
                                     _lastTick = DateTime.UtcNow;
                                     _helloOk?.TrySetResult(true);
+                                }
+
+                                // agent RPC ack: 提取 runId，发起 agent.wait
+                                if (root.TryGetProperty("id", out var resId)
+                                    && resId.GetString() == _inFlightAgentRpcId
+                                    && root.TryGetProperty("ok", out var agentOk) && agentOk.GetBoolean()
+                                    && root.TryGetProperty("payload", out var agentPl)
+                                    && agentPl.TryGetProperty("runId", out var runIdElem))
+                                {
+                                    var runId = runIdElem.GetString()!;
+                                    if (!string.IsNullOrEmpty(runId))
+                                    {
+                                        var waitId = (++_rpcSeq).ToString();
+                                        _activeAgentWaitId = waitId;
+                                        McpLog.Debug($"[ws] agent ack runId={runId}, 发起 agent.wait id={waitId}");
+                                        _ = SendAgentWait(waitId, runId!);
+                                    }
+                                }
+
+                                // agent.wait 返回 → agent run 完成
+                                if (root.TryGetProperty("id", out var waitResId)
+                                    && waitResId.GetString() == _activeAgentWaitId)
+                                {
+                                    _agentRunCompleted = true;
+                                    _activeAgentWaitId = null;
+                                    McpLog.Debug("[ws] agent run 完成");
                                 }
                                 break;
 
