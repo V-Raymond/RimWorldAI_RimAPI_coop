@@ -38,6 +38,7 @@ namespace RimWorldMCP
             base.GameComponentUpdate();
             McpLog.Flush();
             McpCommandQueue.ProcessPending();
+            McpEventMonitor.Tick(_transport);
             McpOssUploader.ProcessPendingUploads();
             McpCommandQueue.ProcessDeferredCleanup();
         }
