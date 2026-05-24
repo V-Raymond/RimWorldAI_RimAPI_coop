@@ -92,8 +92,14 @@ namespace RimWorldMCP.Tools
                     }
 
                     IntVec3 pos = new IntVec3(posX, posY, posZ);
-                    GenConstruct.PlaceBlueprintForBuild(
-                        (BuildableDef)def, pos, map, rot, Faction.OfPlayer, stuff);
+                    BuildableDef bdef = (BuildableDef)def;
+
+                    // 地形/合法性检查
+                    var canPlace = GenConstruct.CanPlaceBlueprintAt(bdef, pos, rot, map, false, null, null, stuff);
+                    if (!canPlace)
+                        return ToolResult.Error($"无法在 ({posX}, {posY}, {posZ}) 放置 {def.label}：{canPlace.Reason}");
+
+                    GenConstruct.PlaceBlueprintForBuild(bdef, pos, map, rot, Faction.OfPlayer, stuff);
 
                     string stuffInfo = stuff != null ? $"（材料: {stuff.label}）" : "";
                     return ToolResult.Success($"已成功在坐标 ({posX}, {posY}, {posZ}) 放置 {def.label} ({thingDefName}) 的建造蓝图{stuffInfo}，朝向: {rotationStr}。");

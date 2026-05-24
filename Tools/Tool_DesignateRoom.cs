@@ -165,33 +165,37 @@ namespace RimWorldMCP.Tools
                     // 放置墙体（在门位置处替换为门）
                     foreach (var (wx, wy) in wallPositions)
                     {
+                        var ipos = new IntVec3(wx, wy, centerZ);
                         if (doorPosSet.Contains((wx, wy)))
                         {
+                            var bdef = (BuildableDef)doorDef!;
+                            if (!GenConstruct.CanPlaceBlueprintAt(bdef, ipos, Rot4.North, map, false, null, null, doorStuff))
+                            {
+                                // 门放不了，退化为墙
+                                if (GenConstruct.CanPlaceBlueprintAt((BuildableDef)wallDef, ipos, Rot4.North, map, false, null, null, wallStuff))
+                                {
+                                    GenConstruct.PlaceBlueprintForBuild((BuildableDef)wallDef, ipos, map, Rot4.North, Faction.OfPlayer, wallStuff);
+                                    placedWalls++;
+                                }
+                                continue;
+                            }
                             try
                             {
-                                GenConstruct.PlaceBlueprintForBuild(
-                                    (BuildableDef)doorDef!, new IntVec3(wx, wy, centerZ),
-                                    map, Rot4.North, Faction.OfPlayer, doorStuff);
+                                GenConstruct.PlaceBlueprintForBuild(bdef, ipos, map, Rot4.North, Faction.OfPlayer, doorStuff);
                                 placedDoors++;
                             }
-                            catch (Exception ex)
-                            {
-                                errors.Add($"门({wx},{wy}): {ex.Message}");
-                            }
+                            catch (Exception ex) { errors.Add($"门({wx},{wy}): {ex.Message}"); }
                         }
                         else
                         {
+                            if (!GenConstruct.CanPlaceBlueprintAt((BuildableDef)wallDef, ipos, Rot4.North, map, false, null, null, wallStuff))
+                                continue;
                             try
                             {
-                                GenConstruct.PlaceBlueprintForBuild(
-                                    (BuildableDef)wallDef, new IntVec3(wx, wy, centerZ),
-                                    map, Rot4.North, Faction.OfPlayer, wallStuff);
+                                GenConstruct.PlaceBlueprintForBuild((BuildableDef)wallDef, ipos, map, Rot4.North, Faction.OfPlayer, wallStuff);
                                 placedWalls++;
                             }
-                            catch (Exception ex)
-                            {
-                                errors.Add($"墙({wx},{wy}): {ex.Message}");
-                            }
+                            catch (Exception ex) { errors.Add($"墙({wx},{wy}): {ex.Message}"); }
                         }
                     }
 
@@ -201,17 +205,15 @@ namespace RimWorldMCP.Tools
                     {
                         foreach (var (fx, fy) in floorPositions)
                         {
+                            var fpos = new IntVec3(fx, fy, centerZ);
+                            if (!GenConstruct.CanPlaceBlueprintAt((BuildableDef)floorDef, fpos, Rot4.North, map, false, null, null, floorStuff))
+                                continue;
                             try
                             {
-                                GenConstruct.PlaceBlueprintForBuild(
-                                    (BuildableDef)floorDef, new IntVec3(fx, fy, centerZ),
-                                    map, Rot4.North, Faction.OfPlayer, floorStuff);
+                                GenConstruct.PlaceBlueprintForBuild((BuildableDef)floorDef, fpos, map, Rot4.North, Faction.OfPlayer, floorStuff);
                                 placedFloors++;
                             }
-                            catch (Exception ex)
-                            {
-                                errors.Add($"地板({fx},{fy}): {ex.Message}");
-                            }
+                            catch (Exception ex) { errors.Add($"地板({fx},{fy}): {ex.Message}"); }
                         }
                     }
 
