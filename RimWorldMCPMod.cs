@@ -36,8 +36,8 @@ namespace RimWorldMCP
             if (Settings.BridgeType > 0)
             {
                 // OpenClaw
-                listing.Label("MCP 端点 URL");
-                listing.Label("示例: http://localhost:8080/mcp");
+                listing.Label("Gateway WebSocket URL");
+                listing.Label("示例: ws://localhost:8080/gateway");
                 Settings.BridgeUrl = listing.TextEntry(Settings.BridgeUrl);
 
                 listing.Label("Token");
