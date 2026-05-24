@@ -1,0 +1,92 @@
+using System;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Verse;
+using RimWorld;
+using RimWorldMCP;
+
+namespace RimWorldMCP.Tools
+{
+    public class Tool_DesignateHarvest : ITool
+    {
+        public string Name => "designate_harvest";
+        public string Description => "标记指定区域已成熟的作物以供收割（仅 harvestTag=\"Standard\" 的作物，如稻米、玉米）。提供 end_x/end_y 可划定矩形范围。";
+        public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                pos_x = new { type = "integer", description = "起点 X 坐标（水平）" },
+                pos_y = new { type = "integer", description = "起点 Y 坐标（垂直）" },
+                end_x = new { type = "integer", description = "终点 X 坐标（可选，与 end_y 配对划定矩形范围）" },
+                end_y = new { type = "integer", description = "终点 Y 坐标（可选，与 end_x 配对划定矩形范围）" }
+            },
+            required = new[] { "pos_x", "pos_y" }
+        });
+
+        public async Task<ToolResult> ExecuteAsync(JsonElement? args)
+        {
+            if (args == null) return ToolResult.Error("缺少参数");
+            if (!args.Value.TryGetProperty("pos_x", out var jX) || !jX.TryGetInt32(out var posX))
+                return ToolResult.Error("缺少必填参数: pos_x");
+            if (!args.Value.TryGetProperty("pos_y", out var jY) || !jY.TryGetInt32(out var posY))
+                return ToolResult.Error("缺少必填参数: pos_y");
+
+            int endX = posX, endY = posY;
+            bool isRange = args.Value.TryGetProperty("end_x", out var jEx) && jEx.TryGetInt32(out endX)
+                        && args.Value.TryGetProperty("end_y", out var jEy) && jEy.TryGetInt32(out endY);
+
+            return await McpCommandQueue.DispatchAsync(() =>
+            {
+                try
+                {
+                    Map map = Find.CurrentMap;
+                    if (map == null) return ToolResult.Error("没有当前地图，请先加载游戏存档。");
+
+                    int minX = Math.Min(posX, endX);
+                    int maxX = Math.Max(posX, endX);
+                    int minZ = Math.Min(posY, endY);
+                    int maxZ = Math.Max(posY, endY);
+
+                    CellRect area = CellRect.FromLimits(minX, minZ, maxX, maxZ);
+                    area.ClipInsideMap(map);
+
+                    if (area.IsEmpty)
+                        return ToolResult.Error($"指定范围 ({minX},{minZ})~({maxX},{maxZ}) 完全在地图外。");
+
+                    int harvested = 0, skipped = 0, fogged = 0, noPlant = 0, notReady = 0;
+
+                    foreach (IntVec3 cell in area)
+                    {
+                        if (cell.Fogged(map)) { fogged++; continue; }
+
+                        Plant plant = cell.GetPlant(map);
+                        if (plant == null) { noPlant++; continue; }
+                        if (plant.def.plant == null) { noPlant++; continue; }
+
+                        // 仅收割 harvestTag="Standard" 且已成熟的作物（对齐 Designator_PlantsHarvest）
+                        if (plant.def.plant.harvestTag != "Standard") { noPlant++; continue; }
+                        if (!plant.HarvestableNow) { notReady++; continue; }
+
+                        if (map.designationManager.DesignationOn(plant, DesignationDefOf.HarvestPlant) != null)
+                        { skipped++; continue; }
+
+                        map.designationManager.RemoveAllDesignationsOn(plant, false);
+                        map.designationManager.AddDesignation(new Designation(plant, DesignationDefOf.HarvestPlant, null));
+                        harvested++;
+                    }
+
+                    var sb = new StringBuilder();
+                    sb.Append(isRange
+                        ? $"已标记收割范围 ({minX},{minZ})~({maxX},{maxZ})：{harvested} 株"
+                        : $"已标记收割坐标 ({posX}, {posY})：{harvested} 株");
+                    sb.Append($"。（跳过: 迷雾 {fogged}, 无作物 {noPlant}, 未成熟 {notReady}, 已有标记 {skipped}）");
+
+                    return ToolResult.Success(sb.ToString());
+                }
+                catch (Exception ex) { return ToolResult.Error($"标记收割失败: {ex.Message}"); }
+            });
+        }
+    }
+}
