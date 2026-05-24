@@ -93,19 +93,28 @@ McpClient 作为 WebSocket 客户端连接 OpenClaw Gateway（默认 `ws://127.0
   "method": "connect",
   "params": {
     "minProtocol": 3,
-    "maxProtocol": 3,
+    "maxProtocol": 4,
     "client": { "id": "gateway-client", "displayName": "RimWorldMCP", "version": "1.0", "platform": "windows", "mode": "backend" },
+    "role": "operator",
+    "scopes": ["operator.read", "operator.write"],
     "caps": ["tool-events"],
+    "locale": "zh-CN",
+    "userAgent": "RimWorldMCP/1.0",
     "auth": { "token": "...", "password": null, "deviceToken": null },
     "device": { "id": "rimworld-mcp", "nonce": "xxx" }
   }
 }
 ```
 
+- `client.id: "gateway-client"` + `client.mode: "backend"` + loopback 连接 → 官方允许**省略 device 签名**
+- protocol v3~v4 协商
+
 **Step 3: 收到 hello-ok**
 ```json
-{"type":"res","ok":true,"payload":{"type":"hello-ok","server":{"version":"...","connId":"..."}}}
+{"type":"res","ok":true,"payload":{"type":"hello-ok","server":{"version":"...","connId":"..."},"policy":{"tickIntervalMs":30000,"maxPayload":26214400,"maxBufferedBytes":52428800}}}
 ```
+
+- `policy.tickIntervalMs` 用于心跳检测，超时 `2×tickIntervalMs` 断开
 
 ### 连接流程（模式 B — 简易兼容，15 秒超时降级）
 
