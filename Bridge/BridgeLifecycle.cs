@@ -34,6 +34,7 @@ namespace RimWorldMCP
         private const int IdleOverviewIntervalMs = 120000;
         private static int _dailyReportDay = -1;
         private static int _lastColonistCount = -1;
+        private static bool _initialStatsSent;
         private static int _lastNoColonistsSendMs;
         private const int NoColonistsResendMs = 60000;
         private static int _lastDialogCount;
@@ -117,6 +118,7 @@ namespace RimWorldMCP
 
         public static void Stop()
         {
+            _initialStatsSent = false;
             CCClient.Disconnect();
             StopCompanionProcess();
         }
@@ -201,6 +203,13 @@ namespace RimWorldMCP
 
             AutoPauseGuard();
             var colonists = PawnsFinder.AllMaps_FreeColonistsSpawned;
+
+            // 首次连接后立即推送殖民地统计（填充 Web 侧边栏初始数据）
+            if (!_initialStatsSent)
+            {
+                _initialStatsSent = true;
+                SendCCMessage("Init", "", BuildColonyStats(map, colonists));
+            }
             int colonistCount = colonists.Count;
             int nowMs = Environment.TickCount;
 
