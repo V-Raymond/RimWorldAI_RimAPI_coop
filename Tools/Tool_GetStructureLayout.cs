@@ -79,7 +79,8 @@ namespace RimWorldMCP.Tools
             ['+'] = "门",
             ['='] = "种植区",
             ['S'] = "储存区",
-            ['.'] = "空地"
+            ['.'] = "空地",
+            ['█'] = "迷雾"
         };
 
         public async Task<ToolResult> ExecuteAsync(JsonElement? args)
@@ -206,6 +207,8 @@ namespace RimWorldMCP.Tools
             Dictionary<string, char> fallbackMap, ref int fallbackIdx, Dictionary<char, string> legend,
             bool includeNaturalRock)
         {
+            if (c.Fogged(map)) return '█';
+
             var ed = c.GetEdifice(map);
             if (ed == null)
             {

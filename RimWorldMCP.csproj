@@ -88,7 +88,7 @@
 
   <!-- 打包时清理 claude-sessions（运行时生成的会话数据不应发布） -->
   <Target Name="CleanSessions" AfterTargets="Build">
-    <RemoveDir Directories="$(MSBuildProjectDirectory)\publish\claude-sessions" />
+    <RemoveDir Directories="$(MSBuildProjectDirectory)\publish\claude-sessions" ContinueOnError="true" />
   </Target>
 
 </Project>
