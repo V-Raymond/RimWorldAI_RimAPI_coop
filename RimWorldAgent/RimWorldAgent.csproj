@@ -44,4 +44,9 @@
     <ProjectReference Include="..\SimpleMspServer\SimpleMspServer.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyAbout" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\About\About.xml"
+          DestinationFolder="$(OutputPath)About\" />
+  </Target>
+
 </Project>
