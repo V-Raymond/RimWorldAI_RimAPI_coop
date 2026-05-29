@@ -16,7 +16,7 @@ namespace SimpleMspServer
         public string Host { get; }
         public bool IsRunning => _transport != null;
 
-        public McpServiceHost(int port = 9877, string host = "localhost")
+        public McpServiceHost(int port = 9877, string host = "0.0.0.0")
         {
             Port = port;
             Host = host;

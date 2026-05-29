@@ -64,9 +64,9 @@ namespace RimWorldMCP
             h += 40f; // 启用开关（始终可见）
             if (Settings.OssEnabled)
             {
-                h += 200f;
-                if (_showSecrets) h += 80f;
-                if (Settings.OssUseSignedUrl) h += 50f;
+                h += 280f;  // Endpoint+Bucket+密钥按钮+签名开关+兜底
+                if (_showSecrets) h += 90f;
+                if (Settings.OssUseSignedUrl) h += 60f;
             }
 
             // 兜底余量，防止静态估算偏差导致末尾控件不可见

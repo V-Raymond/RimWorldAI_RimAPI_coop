@@ -12,7 +12,7 @@ namespace RimWorldMCP
         public static bool IsRunning => _host?.IsRunning ?? false;
 
         private const int DefaultPort = 9877;
-        private const string DefaultHost = "localhost";
+        private const string DefaultHost = "0.0.0.0";
 
         public static void Start()
         {
@@ -20,28 +20,36 @@ namespace RimWorldMCP
 
             try
             {
+                Verse.Log.Message("[RimWorldMCP] Step 1/6: OSS 配置...");
                 if (RimWorldMCPMod.Instance != null)
                     McpOssConfig.LoadFromModSettings(RimWorldMCPMod.Instance.Settings);
 
+                Verse.Log.Message("[RimWorldMCP] Step 2/6: 符号字典初始化...");
                 SymbolDictionary.Initialize();
 
+                Verse.Log.Message("[RimWorldMCP] Step 3/6: 创建 ToolRegistry...");
                 var toolRegistry = new ToolRegistry();
+
+                Verse.Log.Message("[RimWorldMCP] Step 4/6: 注册全部 Tool...");
                 RegisterAllTools(toolRegistry);
                 ToolRegistry = toolRegistry;
 
                 var host = RimWorldMCPMod.Instance?.Settings?.McpHost ?? DefaultHost;
                 var port = RimWorldMCPMod.Instance?.Settings?.McpPort ?? DefaultPort;
-
+                Verse.Log.Message($"[RimWorldMCP] Step 5/6: 创建 McpServiceHost (host={host}, port={port})...");
                 _host = new SimpleMspServer.McpServiceHost(port, host);
                 _host.RegisterProvider(toolRegistry);
+
+                Verse.Log.Message("[RimWorldMCP] Step 6/6: 启动 HTTP 监听...");
                 _host.Start();
 
-                McpLog.Info($"MCP 服务已启动: http://{host}:{port}");
+                Verse.Log.Message($"[RimWorldMCP] MCP 服务已启动: http://{host}:{port}");
             }
             catch (Exception ex)
             {
                 _host?.Dispose(); _host = null;
-                throw new Exception($"MCP 服务启动失败: {ex.Message}", ex);
+                Verse.Log.Error($"[RimWorldMCP] MCP 服务启动失败: {ex}");
+                McpLog.Error($"MCP 服务启动失败: {ex.Message}");
             }
         }
 
