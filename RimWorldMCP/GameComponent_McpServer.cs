@@ -7,6 +7,7 @@ namespace RimWorldMCP
     public class GameComponent_McpServer : GameComponent
     {
         private string _sessionId = "";
+        private int _lastTickPush;
         public static string CurrentSessionId { get; private set; } = "";
 
         public GameComponent_McpServer(Game game) { }
@@ -48,6 +49,33 @@ namespace RimWorldMCP
             McpOssUploader.ProcessPendingUploads();
             McpCommandQueue.ProcessDeferredCleanup();
             CameraHelper.AutoTrackColonistsTick();
+
+            // 每 60 tick (~1s) 推送一次游戏状态到 MCP 客户端
+            var currentTick = Find.TickManager?.TicksGame ?? 0;
+            if (currentTick - _lastTickPush >= 60)
+            {
+                _lastTickPush = currentTick;
+                PushTickEvent();
+            }
+        }
+
+        private static void PushTickEvent()
+        {
+            try
+            {
+                var tick = Find.TickManager?.TicksGame ?? 0;
+                var speed = Find.TickManager?.CurTimeSpeed ?? Verse.TimeSpeed.Normal;
+                var paused = Find.TickManager?.Paused ?? false;
+                var json = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    type = "tick",
+                    tick,
+                    speed = speed.ToString(),
+                    paused
+                });
+                SimpleMspServer.McpServiceHost.Instance?.SendEvent(json);
+            }
+            catch { /* 推送失败不影响游戏 */ }
         }
 
         private void StartMcpSession()
