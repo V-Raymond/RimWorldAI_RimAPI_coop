@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using RimWorldMCP.MapRendering;
 using RimWorldMCP.Tools;
 using Verse;
@@ -68,26 +69,56 @@ namespace RimWorldMCP
 
         private static void RegisterAllTools(ToolRegistry registry)
         {
-            foreach (var type in typeof(ToolRegistry).Assembly.GetTypes())
+            try
             {
-                if (!typeof(ITool).IsAssignableFrom(type) || type.IsInterface || type.IsAbstract)
-                    continue;
+                var asm = typeof(ToolRegistry).Assembly;
+                Verse.Log.Message($"[RimWorldMCP] 扫描程序集: {asm.FullName} ({asm.Location})");
 
-                McpLog.Info($"注册工具: {type.Name}");
+                Type[] types;
                 try
                 {
-                    var tool = (ITool)Activator.CreateInstance(type);
-                    if (tool != null)
-                    {
-                        if (tool is IHasAvailability hasAvail && !hasAvail.IsAvailable)
-                        {
-                            McpLog.Info($"跳过不可用工具: {type.Name}");
-                            continue;
-                        }
-                        registry.Register(tool);
-                    }
+                    types = asm.GetTypes();
+                    Verse.Log.Message($"[RimWorldMCP] GetTypes() 返回 {types.Length} 个类型");
                 }
-                catch (Exception ex) { McpLog.Warn($"注册失败 {type.Name}: {ex.Message}"); }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Verse.Log.Error($"[RimWorldMCP] GetTypes() 失败: {ex.Message}");
+                    foreach (var le in ex.LoaderExceptions)
+                    {
+                        if (le != null) Verse.Log.Error($"[RimWorldMCP]   LoaderException: {le.Message}");
+                    }
+                    return;
+                }
+
+                foreach (var type in types)
+                {
+                    if (type.IsInterface || type.IsAbstract)
+                        continue;
+                    if (!typeof(ITool).IsAssignableFrom(type))
+                        continue;
+
+                    McpLog.Info($"注册工具: {type.Name}");
+                    try
+                    {
+                        var tool = (ITool)Activator.CreateInstance(type);
+                        if (tool != null)
+                        {
+                            if (tool is IHasAvailability hasAvail && !hasAvail.IsAvailable)
+                            {
+                                McpLog.Info($"跳过不可用工具: {type.Name}");
+                                continue;
+                            }
+                            registry.Register(tool);
+                        }
+                    }
+                    catch (Exception ex) { McpLog.Warn($"注册失败 {type.Name}: {ex.Message}"); }
+                }
+
+                Verse.Log.Message($"[RimWorldMCP] 共注册 {registry.AllTools.Count} 个工具");
+            }
+            catch (Exception ex)
+            {
+                Verse.Log.Error($"[RimWorldMCP] RegisterAllTools 异常: {ex}");
             }
         }
     }

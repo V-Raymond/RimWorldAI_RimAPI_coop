@@ -87,8 +87,11 @@ namespace SimpleMspServer
                     }
                 };
 
+                _log.Debug("创建 McpServer...");
                 _sdkServer = McpServer.Create(_sdkTransport, options, NullLoggerFactory.Instance);
+                _log.Debug("RunAsync...");
                 _ = _sdkServer.RunAsync(_cts.Token);
+                _log.Debug("McpServer 已启动");
 
                 // ── HttpListener ──
                 _listener = new HttpListener();
@@ -120,6 +123,8 @@ namespace SimpleMspServer
             _cts?.Cancel();
             try { _listener?.Stop(); _listener?.Close(); } catch { }
             _listener = null;
+            _sdkServer = null;
+            _sdkTransport = null;
             _cts?.Dispose();
             _cts = null;
             Instance = null;
@@ -129,19 +134,27 @@ namespace SimpleMspServer
 
         private async Task AcceptLoop(CancellationToken ct)
         {
+            _log.Debug("AcceptLoop 进入循环...");
             while (!ct.IsCancellationRequested && _listener?.IsListening == true)
             {
-                try { var ctx = await _listener.GetContextAsync(); _ = Task.Run(() => HandleAsync(ctx), ct); }
+                try
+                {
+                    var ctx = await _listener.GetContextAsync().ConfigureAwait(false);
+                    _ = Task.Run(() => HandleAsync(ctx), ct);
+                }
                 catch (OperationCanceledException) { break; }
                 catch (HttpListenerException) { break; }
-                catch (Exception ex) { _log.Error($"HTTP 接受错误: {ex.Message}"); }
+                catch (Exception ex) { _log.Error($"HTTP 接受错误: {ex}"); }
             }
+            _log.Info("AcceptLoop 退出");
         }
 
         private async Task HandleAsync(HttpListenerContext ctx)
         {
             var req = ctx.Request;
             var res = ctx.Response;
+
+            _log.Debug($"HTTP {req.HttpMethod} {req.Url?.AbsolutePath}");
 
             if (req.Headers.Get("Origin") != null)
             {
@@ -152,7 +165,7 @@ namespace SimpleMspServer
 
             try
             {
-                if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); return; }
+                if (req.HttpMethod == "OPTIONS") { _log.Debug("→ 204 OPTIONS"); res.StatusCode = 204; res.Close(); return; }
 
                 var path = req.Url?.AbsolutePath ?? "/";
                 var isMcp = path == "/mcp" || path == "/" || path == "";
@@ -163,7 +176,7 @@ namespace SimpleMspServer
                 else if (path == "/events" && req.HttpMethod == "GET") await HandleEventsSse(ctx);
                 else if (path == "/health" && req.HttpMethod == "GET") Write(res, "OK", "text/plain");
                 else if (req.HttpMethod == "GET") Write(res, "{\"status\":\"ok\",\"server\":\"RimWorldMCP\",\"transport\":\"http+sse\"}", "application/json");
-                else { res.StatusCode = 404; res.Close(); }
+                else { _log.Debug($"→ 404 {req.HttpMethod} {path}"); res.StatusCode = 404; res.Close(); }
             }
             catch (Exception ex)
             {
@@ -181,12 +194,13 @@ namespace SimpleMspServer
             using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
             var body = await reader.ReadToEndAsync();
 
+            _log.Debug($"POST body: {body.Substring(0, Math.Min(body.Length, 200))}");
+
             var sid = req.Headers.Get("Mcp-Session-Id");
             if (!string.IsNullOrEmpty(sid)) res.Headers.Add("Mcp-Session-Id", sid);
 
             var msg = System.Text.Json.JsonSerializer.Deserialize<JsonRpcMessage>(body,
                 new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
-
             if (msg == null)
             {
                 Write(res, "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}", "application/json");
@@ -194,17 +208,23 @@ namespace SimpleMspServer
             }
 
             using var ms = new MemoryStream();
-            var wroteResponse = _sdkTransport!.HandlePostRequestAsync(msg, ms, _cts?.Token ?? CancellationToken.None).GetAwaiter().GetResult();
+            _log.Debug($"→ HandlePostRequestAsync ({body.Length} bytes)");
+            var wroteResponse = await _sdkTransport!.HandlePostRequestAsync(msg, ms, _cts?.Token ?? CancellationToken.None);
+            _log.Debug($"← HandlePostRequestAsync: wroteResponse={wroteResponse}, output={ms.Length} bytes");
 
             if (wroteResponse)
             {
                 ms.Position = 0;
                 using var outReader = new StreamReader(ms);
-                Write(res, outReader.ReadToEnd(), "application/json");
+                var raw = outReader.ReadToEnd();
+                var result = StripSse(raw);
+                _log.Debug($"Response: {result.Substring(0, Math.Min(result.Length, 200))}");
+                Write(res, result, "application/json");
             }
             else
             {
-                res.StatusCode = 202; // 响应通过 SSE 推送
+                _log.Debug($"→ 202 Accepted (SSE 推送)");
+                res.StatusCode = 202;
                 res.Close();
             }
         }
@@ -221,7 +241,7 @@ namespace SimpleMspServer
             var sid = ctx.Request.Headers.Get("Mcp-Session-Id");
             if (!string.IsNullOrEmpty(sid)) res.Headers.Add("Mcp-Session-Id", sid);
 
-            try { await _sdkTransport!.HandleGetRequestAsync(res.OutputStream, CancellationToken.None); }
+            try { await _sdkTransport!.HandleGetRequestAsync(res.OutputStream, _cts?.Token ?? CancellationToken.None); }
             catch (Exception ex) when (ex.Message.Contains("Session resumption")) { _log.Info($"SSE 新会话: {ex.Message}"); }
             catch (Exception ex) { _log.Warn($"MCP SSE 断开: {ex.Message}"); }
         }
@@ -266,6 +286,19 @@ namespace SimpleMspServer
                 IsError = true,
                 Content = new List<ContentItem> { new ContentItem { Text = $"Unknown tool: {name}" } }
             };
+        }
+
+        private static string StripSse(string raw)
+        {
+            // SDK Streamable HTTP 响应是 SSE 格式: "event: message\ndata: {...json...}\n\n"
+            // 提取 data: 行的 JSON 内容
+            foreach (var line in raw.Split('\n'))
+            {
+                var t = line.Trim();
+                if (t.StartsWith("data:"))
+                    return t.Substring(5).Trim();
+            }
+            return raw; // 不是 SSE 格式就直接返回
         }
 
         // ===== 辅助 =====
