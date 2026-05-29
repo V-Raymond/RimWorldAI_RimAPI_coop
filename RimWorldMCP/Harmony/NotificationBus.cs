@@ -89,21 +89,6 @@ namespace RimWorldMCP.Harmony
                     Tick = n.Tick
                 };
                 DispatchToAgentQueue(evt, route);
-
-                // 推送到外部 Agent SSE 订阅者（RimworkAgent）
-                try
-                {
-                    var sseJson = System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        type = "event",
-                        evt.Category,
-                        evt.Severity,
-                        evt.Summary,
-                        evt.Tick
-                    });
-                    SimpleMspServer.Transport.SseTransport.Instance?.PushToAgents(sseJson);
-                }
-                catch { /* SSE 推送失败不影响主流程 */ }
             }
         }
 

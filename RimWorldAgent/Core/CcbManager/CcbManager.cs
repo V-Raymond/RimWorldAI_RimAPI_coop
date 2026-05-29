@@ -1,31 +1,36 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using RimWorldAgent.Core.AgentRuntime;
 
 namespace RimWorldAgent.Core.CcbManager
 {
-    /// <summary>CCB (Node.js cc-companion) 子进程管理器。</summary>
+    /// <summary>CCB (Node.js cc-companion) 子进程管理器 — JobObject+PID清理+崩溃重启（旧 BridgeLifecycle 逻辑）</summary>
     public class CcbManager : IDisposable
     {
         private Process? _process;
-        private string _companionDir;
-        private string _sessionsDir;
-        private string? _nodeExe;
-        private int _ccbPort;
-        private string? _ccbToken;
+        private readonly string _companionDir;
+        private readonly string _sessionsDir;
+        private readonly string? _nodeExe;
+        private readonly int _ccbPort;
+        private readonly string? _ccbToken;
+        private readonly int _mcpPort;
+        private readonly int _agentMcpPort;
         private bool _ready;
+        private IntPtr _jobHandle = IntPtr.Zero;
 
         public bool IsReady => _ready;
 
-        public CcbManager(string companionDir, string sessionsDir, int ccbPort = 19999, string? nodeExe = null, string? ccbToken = null)
+        public CcbManager(string companionDir, string sessionsDir, int ccbPort = 19999, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null)
         {
             _companionDir = companionDir;
             _sessionsDir = sessionsDir;
             _ccbPort = ccbPort;
+            _mcpPort = mcpPort;
+            _agentMcpPort = agentMcpPort;
             _ccbToken = ccbToken;
-            _nodeExe = nodeExe ?? FindNodeExe();
+            _nodeExe = nodeExe ?? CompanionInstaller.FindNodeExe();
         }
 
         public bool Start()
@@ -36,14 +41,16 @@ namespace RimWorldAgent.Core.CcbManager
                 return false;
             }
 
+            // PID 残留清理
+            KillStaleByPidFile();
+
             Directory.CreateDirectory(_sessionsDir);
 
-            // 写入 MCP 配置（游戏 + Agent 内部 Tool）
             var mcpJson = "{\"mcpServers\":{"
-                + "\"rimworld\":{\"type\":\"http\",\"url\":\"http://localhost:9877/mcp\"},"
-                + "\"agent\":{\"type\":\"http\",\"url\":\"http://localhost:9878/mcp\"}"
+                + $"\"rimworld\":{{\"type\":\"http\",\"url\":\"http://localhost:{_mcpPort}/mcp\"}},"
+                + $"\"agent\":{{\"type\":\"http\",\"url\":\"http://localhost:{_agentMcpPort}/mcp\"}}"
                 + "}}";
-            System.IO.File.WriteAllText(System.IO.Path.Combine(_sessionsDir, ".mcp.json"), mcpJson);
+            File.WriteAllText(Path.Combine(_sessionsDir, ".mcp.json"), mcpJson);
 
             var args = $"--import tsx/esm companion/companion.ts"
                 + $" --idle-timeout 30000"
@@ -66,11 +73,23 @@ namespace RimWorldAgent.Core.CcbManager
                 if (!string.IsNullOrEmpty(_ccbToken))
                     psi.Environment["CCB_AUTH_TOKEN"] = _ccbToken;
 
+                _ready = false;
                 _process = Process.Start(psi);
                 if (_process == null) { CoreLog.Error("[CcbManager] 无法启动进程"); return false; }
 
+                // Windows JobObject：父进程退出 → OS 自动杀子进程
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    if (_jobHandle != IntPtr.Zero) { CloseHandle(_jobHandle); _jobHandle = IntPtr.Zero; }
+                    AttachToJobObject(_process);
+                }
+
                 _process.EnableRaisingEvents = true;
-                _process.Exited += (_, _) => { _ready = false; CoreLog.Error($"[CcbManager] 进程退出 (code={_process.ExitCode})"); };
+                _process.Exited += (_, _) =>
+                {
+                    _ready = false;
+                    CoreLog.Error($"[CcbManager] 进程退出 (code={_process?.ExitCode})");
+                };
                 _process.OutputDataReceived += (_, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
@@ -89,7 +108,6 @@ namespace RimWorldAgent.Core.CcbManager
             catch (Exception ex) { CoreLog.Error($"[CcbManager] 启动异常: {ex.Message}"); return false; }
         }
 
-        /// <summary>等待 CCB 就绪（最长 waitMs ms）</summary>
         public async Task<bool> WaitReadyAsync(int waitMs = 15000)
         {
             var deadline = Environment.TickCount + waitMs;
@@ -102,46 +120,132 @@ namespace RimWorldAgent.Core.CcbManager
             return _ready;
         }
 
+        /// <summary>每帧检测进程崩溃，自动重拉</summary>
+        public bool TickAndRestart()
+        {
+            if (_process == null || _process.HasExited)
+            {
+                if (_process != null)
+                {
+                    var exitCode = _process.ExitCode;
+                    CoreLog.Error($"[CcbManager] 进程异常退出 (code={exitCode})，重启...");
+                }
+                Stop();
+                return Start();
+            }
+            return true;
+        }
+
         public void Stop()
         {
+            _ready = false;
             if (_process == null) return;
             try
             {
-                if (!_process.HasExited) { _process.Kill(); _process.WaitForExit(3000); }
+                if (!_process.HasExited) { _process.Kill(); _process.WaitForExit(5000); }
             }
             catch { }
-            finally { _process.Dispose(); _process = null; _ready = false; }
+            finally
+            {
+                _process.Dispose(); _process = null;
+                if (_jobHandle != IntPtr.Zero) { CloseHandle(_jobHandle); _jobHandle = IntPtr.Zero; }
+            }
         }
 
         public void Dispose() => Stop();
 
-        // ---- 查找 node.exe ----
-        private static string? FindNodeExe()
-        {
-            var names = Environment.OSVersion.Platform == PlatformID.Win32NT
-                ? new[] { "node.exe" } : new[] { "node", "nodejs" };
+        // ========== PID 残留清理 ==========
 
-            foreach (var name in names)
+        private void KillStaleByPidFile()
+        {
+            var pidFile = Path.Combine(_companionDir, ".pid");
+            if (!File.Exists(pidFile)) return;
+
+            try
             {
-                try
+                var pidText = File.ReadAllText(pidFile).Trim();
+                CoreLog.Info($"[CcbManager] 发现残留 PID 文件: {pidFile} (PID={pidText})");
+                if (int.TryParse(pidText, out int pid))
                 {
-                    var psi = new ProcessStartInfo("where", name)
-                    { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
-                    using var p = Process.Start(psi);
-                    if (p == null) continue;
-                    var output = p.StandardOutput.ReadToEnd().Trim();
-                    p.WaitForExit(1000);
-                    if (p.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                    try
                     {
-                        var path = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
-                        if (File.Exists(path)) return path;
+                        using var proc = Process.GetProcessById(pid);
+                        if (!IsNodeProcess(proc)) return;
+                        CoreLog.Info($"[CcbManager] 杀死残留进程 PID={pid}");
+                        proc.Kill(); proc.WaitForExit(3000);
                     }
+                    catch (ArgumentException) { /* 进程已不存在 */ }
                 }
-                catch { }
             }
-            var defaultPath = Environment.OSVersion.Platform == PlatformID.Win32NT
-                ? @"C:\Program Files\nodejs\node.exe" : "/usr/local/bin/node";
-            return File.Exists(defaultPath) ? defaultPath : null;
+            catch (Exception ex) { CoreLog.Error($"[CcbManager] PID 清理失败: {ex.Message}"); }
+            finally { try { File.Delete(pidFile); } catch { } }
+        }
+
+        private static bool IsNodeProcess(Process proc)
+        {
+            var name = proc.ProcessName.ToLowerInvariant();
+            if (name != "node" && name != "node.exe") return false;
+            try { return (proc.MainModule?.FileName ?? "").IndexOf("node", StringComparison.OrdinalIgnoreCase) >= 0; }
+            catch { return false; }
+        }
+
+        // ========== Windows JobObject ==========
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(IntPtr hJob, int jobObjectInfoClass,
+            ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        private const int JobObjectExtendedLimitInformation = 9;
+        private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_COUNTERS
+        {
+            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+            public IO_COUNTERS IoInfo;
+            public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+        }
+
+        private void AttachToJobObject(Process proc)
+        {
+            _jobHandle = CreateJobObject(IntPtr.Zero, null);
+            if (_jobHandle == IntPtr.Zero) return;
+
+            var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            var size = (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+            SetInformationJobObject(_jobHandle, JobObjectExtendedLimitInformation, ref info, size);
+            AssignProcessToJobObject(_jobHandle, proc.Handle);
         }
     }
 }

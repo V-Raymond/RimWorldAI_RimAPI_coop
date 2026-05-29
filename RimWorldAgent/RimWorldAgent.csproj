@@ -66,4 +66,10 @@
           DestinationFolder="..\publish\RimWorldAgent\"
           Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
   </Target>
+  <Target Name="CopyCcCompanion" AfterTargets="Build">
+    <MakeDir Directories="..\publish\RimWorldAgent\cc-companion" />
+    <Exec Command="xcopy &quot;$(MSBuildProjectDirectory)\cc-companion\*&quot; &quot;..\publish\RimWorldAgent\cc-companion\&quot; /S /Y /I /EXCLUDE:$(MSBuildProjectDirectory)\cc-companion\.copyignore"
+          Condition="Exists('$(MSBuildProjectDirectory)\cc-companion')"
+          IgnoreExitCode="true" />
+  </Target>
 </Project>

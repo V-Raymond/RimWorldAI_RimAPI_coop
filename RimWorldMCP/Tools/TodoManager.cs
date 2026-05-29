@@ -150,9 +150,7 @@ namespace RimWorldMCP.Tools
             };
         }
 
-        private static void PushToCompanion()
-        {
-            _ = CCClient.SendEvent("todo-state", BuildCompanionPayload());
-        }
+        // Companion 通信由 Agent CcbWebSocket 负责，MCP 侧不再推送
+        private static void PushToCompanion() { }
     }
 }

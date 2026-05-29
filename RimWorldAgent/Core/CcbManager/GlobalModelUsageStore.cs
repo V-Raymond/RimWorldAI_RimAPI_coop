@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using UnityEngine;
+using Verse;
 
-namespace RimWorldMCP
+namespace RimWorldAgent
 {
     public class ModelUsageData
     {
@@ -94,7 +95,7 @@ namespace RimWorldMCP
                 }
                 catch (Exception ex)
                 {
-                    McpLog.Warn($"[GlobalModelUsage] 保存失败: {ex.Message}");
+                    Log.Warning($"[GlobalModelUsage] 保存失败: {ex.Message}");
                 }
             }
         }
@@ -114,7 +115,7 @@ namespace RimWorldMCP
                 }
                 catch (Exception ex)
                 {
-                    McpLog.Warn($"[GlobalModelUsage] 加载失败: {ex.Message}");
+                    Log.Warning($"[GlobalModelUsage] 加载失败: {ex.Message}");
                     _allModels = new Dictionary<string, ModelUsageData>();
                 }
             }

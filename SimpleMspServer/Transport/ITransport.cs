@@ -8,8 +8,8 @@ namespace SimpleMspServer.Transport
     {
         string Name { get; }
         Task StartAsync(CancellationToken ct);
-        Task SendAsync(string message);
-        event Action<string> OnMessage;
         Task StopAsync();
+        /// <summary>设置同步请求处理器（JSON 入 → JSON 出）</summary>
+        void SetRequestHandler(Func<string, string> handler);
     }
 }

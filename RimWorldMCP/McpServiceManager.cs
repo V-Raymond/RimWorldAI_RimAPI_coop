@@ -1,25 +1,18 @@
 using System;
-using System.IO;
-using System.Threading;
 using RimWorldMCP.MapRendering;
-using SimpleMspServer.Mcp;
 using RimWorldMCP.Tools;
-using SimpleMspServer.Transport;
-using Verse;
 
 namespace RimWorldMCP
 {
     public static class McpServiceManager
     {
-        private static ITransport? _transport;
-        private static CancellationTokenSource? _cts;
+        private static SimpleMspServer.McpServiceHost? _host;
 
-        public static McpServer? Server { get; private set; }
         public static ToolRegistry? ToolRegistry { get; private set; }
-        public static bool IsRunning => _transport != null;
+        public static bool IsRunning => _host?.IsRunning ?? false;
 
         private const int DefaultPort = 9877;
-        private const string DefaultHost = "0.0.0.0";
+        private const string DefaultHost = "localhost";
 
         public static void Start()
         {
@@ -27,63 +20,35 @@ namespace RimWorldMCP
 
             try
             {
-                // 1. 从 ModSettings 加载 OSS 配置
                 if (RimWorldMCPMod.Instance != null)
                     McpOssConfig.LoadFromModSettings(RimWorldMCPMod.Instance.Settings);
 
-                // 2. 初始化符号字典
                 SymbolDictionary.Initialize();
 
-                // 3. 创建 ToolRegistry + 注册所有 Tool
                 var toolRegistry = new ToolRegistry();
                 RegisterAllTools(toolRegistry);
                 ToolRegistry = toolRegistry;
 
-                // 4. 创建 Transport
                 var host = RimWorldMCPMod.Instance?.Settings?.McpHost ?? DefaultHost;
                 var port = RimWorldMCPMod.Instance?.Settings?.McpPort ?? DefaultPort;
-                var transport = new SseTransport(port, host);
 
-                // 5. 创建 McpServer
-                var server = new McpServer(transport, toolRegistry);
-                ((SseTransport)transport).SetMcpHandler(rawJson =>
-                    server.ProcessMessageSync(rawJson));
-                Server = server;
-
-                // 6. 启动 Transport
-                _cts = new CancellationTokenSource();
-                transport.StartAsync(_cts.Token);
-                _transport = transport;
+                _host = new SimpleMspServer.McpServiceHost(port, host);
+                _host.RegisterProvider(toolRegistry);
+                _host.Start();
 
                 McpLog.Info($"MCP 服务已启动: http://{host}:{port}");
             }
             catch (Exception ex)
             {
-                if (_cts != null)
-                {
-                    try { _cts.Cancel(); _cts.Dispose(); } catch { }
-                    _cts = null;
-                }
-                _transport = null;
-                McpLog.Error($"MCP 服务启动失败: {ex.Message}");
+                _host?.Dispose(); _host = null;
+                throw new Exception($"MCP 服务启动失败: {ex.Message}", ex);
             }
         }
 
         public static void Stop()
         {
-            if (_transport != null)
-            {
-                try { _transport.StopAsync(); } catch (Exception ex) { McpLog.Warn($"停止传输时出错: {ex.Message}"); }
-                _transport = null;
-            }
-
-            if (_cts != null)
-            {
-                try { _cts.Cancel(); _cts.Dispose(); } catch { }
-                _cts = null;
-            }
-
-            Server = null;
+            _host?.Dispose();
+            _host = null;
             ToolRegistry = null;
         }
 
@@ -105,7 +70,6 @@ namespace RimWorldMCP
                 try
                 {
                     var tool = (ITool)Activator.CreateInstance(type);
-
                     if (tool != null)
                     {
                         if (tool is IHasAvailability hasAvail && !hasAvail.IsAvailable)
@@ -116,10 +80,7 @@ namespace RimWorldMCP
                         registry.Register(tool);
                     }
                 }
-                catch (Exception ex)
-                {
-                    McpLog.Warn($"注册失败 {type.Name}: {ex.Message}");
-                }
+                catch (Exception ex) { McpLog.Warn($"注册失败 {type.Name}: {ex.Message}"); }
             }
         }
     }

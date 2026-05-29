@@ -341,9 +341,10 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 |------|------|--------|
 | `submit_feedback` | 向开发者提交反馈 | 文本收集 |
 
-### 腐坏追踪 (1)
+### 腐坏追踪 (2)
 | Tool | 说明 | 数据源 |
 |------|------|--------|
+| `check_deterioration` | 扫描地图检查物品腐坏/露天耐久降低，跨阈值时返回警告（可周期调用） | `DeteriorationTracker` |
 | `get_deteriorating_items` | 腐坏/耐久降低物品清单 | `DeteriorationTracker` |
 
 ### 地图 (1)

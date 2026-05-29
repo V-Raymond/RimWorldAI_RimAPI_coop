@@ -16,9 +16,9 @@ namespace RimWorldAgent.Core.AgentRuntime
             Action<string> log)
         {
             // 内部 Tool → 直接本地处理
-            if (InternalToolRegistry.IsInternal(toolName))
+            if (InternalToolRegistry.Instance.IsInternal(toolName))
             {
-                var (result, shouldExit) = await InternalToolRegistry.ExecuteAsync(toolName, input);
+                var (result, shouldExit) = await InternalToolRegistry.Instance.ExecuteInternalAsync(toolName, input);
                 log($"[internal] {toolName}: {result}");
                 await ccbWs.SendToolResult(toolId, result);
 

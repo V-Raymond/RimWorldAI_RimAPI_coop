@@ -38,31 +38,19 @@ namespace RimWorldAgent
             }
             if (ccb == null || !ccb.IsReady) Console.WriteLine("  CCB: 未启动 (Agent 将在无 CCB 模式运行)");
 
-            var skillsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Skills");
-            InternalToolRegistry.LoadSkills(skillsDir);
-            InternalToolRegistry.InitializeSkillTools();
+            var skillsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "resource", "Skills");
+            InternalToolRegistry.Instance.LoadSkills(skillsDir);
+            InternalToolRegistry.Instance.InitializeSkillTools();
 
-            using var agentMcp = new RimWorldAgent.Core.Mcp.Server.AgentMcpServer(9878);
-            _ = agentMcp.StartAsync();
+            // Agent MCP Server (:9878) — 暴露内部 Tool 给 CCB
+            var agentHost = new SimpleMspServer.McpServiceHost(9878);
+            agentHost.RegisterProvider(InternalToolRegistry.Instance);
+            agentHost.Start();
             Console.WriteLine("  AgentMCP: :9878 (内部 Tool + Skills)");
 
             using var mcp = new McpClient(mcpUrl);
             var ctx = new ContextBuilder(mcp);
             var loopInterval = TimeSpan.FromSeconds(10);
-
-            // SSE 事件路由
-            var combatTriggered = new TaskCompletionSource<ColonyEvent>();
-            mcp.OnGameEvent += evt =>
-            {
-                if (evt.Severity == "Critical" && evt.Category == "Combat")
-                {
-                    combatTriggered.TrySetResult(evt);
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Combat);
-                }
-                else if (evt.Severity != "Critical")
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Overseer);
-            };
-            mcp.StartSse();
 
             Console.WriteLine("Agent Main Loop 启动 (Ctrl+C 退出)");
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; _cts.Cancel(); };
@@ -115,13 +103,11 @@ namespace RimWorldAgent
                         }
                     }
 
-                    // 3. 检查 Combat Agent（SSE 事件驱动）
-                    if (combatTriggered.Task.IsCompleted && AgentOrchestrator.IsSleeping("combat"))
+                    // 3. Combat Agent — 有急迫事件时唤醒
+                    if (AgentOrchestrator.IsSleeping("combat") && AgentOrchestrator.HasPendingEvents("combat"))
                     {
-                        var evt = await combatTriggered.Task;
-                        combatTriggered = new TaskCompletionSource<ColonyEvent>();
                         AgentOrchestrator.BeginAgent("combat");
-                        Console.WriteLine($"=== Combat 唤醒: {evt.Summary} ===");
+                        Console.WriteLine("=== Combat 唤醒 ===");
                         var cc = AgentConfigs.Combat;
                         var cp = await ctx.BuildAsync(cc);
                         await RunAgentSession(cc, cp, mcp);
@@ -180,14 +166,7 @@ namespace RimWorldAgent
 
             if (!await ccbWs.ConnectAsync()) { Console.WriteLine($"  [{config.Name}] CCB 连接失败"); return; }
 
-            // 获取该 Agent 可用的 Tool 列表
-            try
-            {
-                var tools = await mcp.ListTools(config.Name);
-                Console.WriteLine($"  [{config.Name}] 可用工具: {tools.Count}");
-            }
-            catch { /* 工具过滤失败不影响对话 */ }
-
+            // 工具由 CCB SDK 自动从 settings.json MCP server 发现
             await ccbWs.SendChat(prompt);
 
             // 等待 Claude 完成（含 tool call 循环）

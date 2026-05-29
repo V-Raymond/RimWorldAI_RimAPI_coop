@@ -135,6 +135,7 @@
   <RimWorldMCP_Tool_restart_game>重新开始游戏</RimWorldMCP_Tool_restart_game>
 
   <!-- 腐坏追踪 -->
+  <RimWorldMCP_Tool_check_deterioration>检查物品腐化</RimWorldMCP_Tool_check_deterioration>
   <RimWorldMCP_Tool_get_deteriorating_items>腐坏物品清单</RimWorldMCP_Tool_get_deteriorating_items>
 
   <!-- TODO 系统 -->

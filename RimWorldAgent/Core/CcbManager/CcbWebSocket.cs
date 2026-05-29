@@ -1,31 +1,52 @@
-﻿using System;
+using System;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using RimWorldAgent.Core.AgentRuntime;
 
 namespace RimWorldAgent.Core.CcbManager
 {
-    /// <summary>CCB WebSocket 客户端 — 连接 CC Companion，发送 Claude query，接收响应。</summary>
+    public enum CcbClientState { Disconnected, Connecting, Connected, Ready }
+
+    /// <summary>CC Companion WebSocket 客户端 — 心跳/重连/Token提取/hello/abort（旧 CCClient 逻辑）</summary>
     public class CcbWebSocket : IDisposable
     {
         private ClientWebSocket? _ws;
         private CancellationTokenSource? _cts;
-        private readonly string _url;
-        private readonly string _token;
-        private TaskCompletionSource<bool>? _helloOk;
-        private bool _ready;
+        private string _url = "";
+        private string _token = "";
+        private CcbClientState _state = CcbClientState.Disconnected;
 
-        public bool IsReady => _ready;
+        private TaskCompletionSource<bool>? _helloOk;
+        private DateTime _lastPong = DateTime.MinValue;
+        private const int PingIntervalMs = 30000;
+        private const int PongTimeoutMs = 60000;
+        private DateTime _lastPing = DateTime.MinValue;
+        private System.Threading.Timer? _heartbeatTimer;
+
+        private int _reconnectDelayMs = 5000;
+        private int _reconnectAttempts;
+        private bool _reconnecting;
+        private volatile bool _shuttingDown;
+        private const int MaxReconnectDelayMs = 60000;
+
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
+        private readonly SemaphoreSlim _eventLock = new(1, 1);
+
+        public CcbClientState State => _state;
+        public bool IsConnected => _state >= CcbClientState.Connected;
+        public bool IsReady => _state == CcbClientState.Ready;
+        public bool IsSendingMessage { get; private set; }
 
         /// <summary>收到 Claude 文本回复时触发</summary>
         public event Action<string>? OnAssistantText;
-        /// <summary>收到 tool_use 请求时触发（agent 需调用 MCP 执行并返回 tool_result）</summary>
+        /// <summary>收到 tool_use 请求时触发</summary>
         public event Action<string, string, JsonElement?>? OnToolUse;
-        /// <summary>回合结束（result 消息）</summary>
+        /// <summary>回合结束</summary>
         public event Action<string, string?>? OnResult;
+        /// <summary>收到中断确认</summary>
+        public event Action? OnAborted;
 
         public CcbWebSocket(string url = "ws://localhost:19999", string token = "")
         {
@@ -33,23 +54,35 @@ namespace RimWorldAgent.Core.CcbManager
             _token = token;
         }
 
+        // ========== 连接管理 ==========
+
         public async Task<bool> ConnectAsync(int timeoutMs = 10000)
         {
+            _shuttingDown = false;
+            Disconnect();
+
             try
             {
                 _ws = new ClientWebSocket();
                 _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
                 _cts = new CancellationTokenSource();
                 _helloOk = new TaskCompletionSource<bool>();
+                _state = CcbClientState.Connecting;
 
                 await _ws.ConnectAsync(new Uri(_url), _cts.Token);
-                _ = ReceiveLoop();
+                _state = CcbClientState.Connected;
+
                 await SendHello();
+                _ = ReceiveLoop(_cts.Token);
 
                 var timeout = Task.Delay(timeoutMs);
                 if (await Task.WhenAny(_helloOk.Task, timeout) == _helloOk.Task)
                 {
-                    _ready = true;
+                    _state = CcbClientState.Ready;
+                    _reconnectAttempts = 0;
+                    _reconnectDelayMs = 5000;
+                    _heartbeatTimer?.Dispose();
+                    _heartbeatTimer = new System.Threading.Timer(_ => Heartbeat(), null, 5000, 5000);
                     return true;
                 }
                 CoreLog.Error("[CcbWS] hello-ok 超时");
@@ -57,76 +90,132 @@ namespace RimWorldAgent.Core.CcbManager
             }
             catch (Exception ex)
             {
+                _state = CcbClientState.Disconnected;
                 CoreLog.Error($"[CcbWS] 连接失败: {ex.Message}");
+                _ = ScheduleReconnect();
                 return false;
             }
         }
 
-        /// <summary>发送聊天消息（用户 prompt）</summary>
-        public async Task SendChat(string text, string? thinkingMode = null)
-        {
-            var msg = new { type = "event", @event = "chat", payload = new { text }, thinking = new { mode = thinkingMode ?? "default" } };
-            await SendJson(msg);
-        }
-
-        /// <summary>发送 tool_result（agent 执行完 MCP 工具后回传给 Claude）</summary>
-        public async Task SendToolResult(string toolUseId, string content, bool isError = false)
-        {
-            var msg = new
-            {
-                type = "event",
-                @event = "tool_result",
-                payload = new { tool_use_id = toolUseId, content = new[] { new { type = "text", text = content } }, is_error = isError }
-            };
-            await SendJson(msg);
-        }
-
         public void Disconnect()
         {
-            _ready = false;
+            _shuttingDown = true;
+            _heartbeatTimer?.Dispose();
+            _heartbeatTimer = null;
             _cts?.Cancel();
-            _ws?.Dispose();
+            _state = CcbClientState.Disconnected;
+            try { _ws?.Dispose(); } catch { }
             _ws = null;
+            _lastPing = DateTime.MinValue;
+            _lastPong = DateTime.MinValue;
         }
 
-        public void Dispose() => Disconnect();
+        // ========== 消息发送 ==========
 
-        // ---- 内部 ----
+        /// <summary>发送聊天消息（用户 prompt）</summary>
+        public async Task SendChat(string text)
+        {
+            await SendEvent("chat", new { text });
+        }
+
+        /// <summary>发送工具执行结果回 Claude</summary>
+        public async Task SendToolResult(string toolUseId, string content, bool isError = false)
+        {
+            await SendEvent("tool_result", new
+            {
+                tool_use_id = toolUseId,
+                content = new[] { new { type = "text", text = content } },
+                is_error = isError
+            });
+        }
+
+        /// <summary>发送游戏事件到 CC Companion</summary>
+        public async Task SendEvent(string eventName, object payload)
+        {
+            if (!IsReady) return;
+            await _eventLock.WaitAsync();
+            try
+            {
+                IsSendingMessage = true;
+                await SendJson(new { type = "event", @event = eventName, payload });
+            }
+            finally
+            {
+                IsSendingMessage = false;
+                _eventLock.Release();
+            }
+        }
+
+        /// <summary>发送中断请求，中止当前 AI 回复</summary>
+        public async Task SendAbort()
+        {
+            await _eventLock.WaitAsync();
+            try
+            {
+                await SendJson(new { type = "abort" });
+                CoreLog.Info("[CcbWS] 已发送中断请求");
+            }
+            finally { _eventLock.Release(); }
+        }
+
+        // ========== 内部 ==========
 
         private async Task SendHello()
         {
+            var settings = RimWorldAgentMod.Instance?.Settings;
             await SendJson(new
             {
                 type = "hello",
                 client = new { name = "RimWorldAgent", version = "1.0" },
-                auth = new { token = _token }
+                auth = new { token = _token },
+                budget = new
+                {
+                    limit = settings?.TokenBudgetLimit ?? 0,
+                    used = 0L,
+                    action = "Block"
+                },
+                thinking = new
+                {
+                    mode = "default",
+                    effort = settings?.CCBThinkingEffort ?? "medium",
+                    tokens = settings?.CCBMaxThinkingTokens ?? 0
+                }
             });
         }
 
         private async Task SendJson(object obj)
         {
-            if (_ws?.State != WebSocketState.Open) return;
-            var json = JsonSerializer.Serialize(obj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            var bytes = Encoding.UTF8.GetBytes(json);
-            await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts?.Token ?? CancellationToken.None);
-        }
-
-        private async Task ReceiveLoop()
-        {
-            var buffer = new byte[65536];
+            await _sendLock.WaitAsync();
             try
             {
-                while (_ws?.State == WebSocketState.Open && (_cts == null || !_cts.IsCancellationRequested))
-                {
-                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts?.Token ?? CancellationToken.None);
-                    if (result.MessageType == WebSocketMessageType.Close) break;
+                var ws = _ws;
+                if (ws?.State != WebSocketState.Open) return;
+                var json = JsonSerializer.Serialize(obj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                var bytes = Encoding.UTF8.GetBytes(json);
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts?.Token ?? CancellationToken.None);
+            }
+            finally { _sendLock.Release(); }
+        }
 
-                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    ProcessMessage(json);
+        private async Task ReceiveLoop(CancellationToken ct)
+        {
+            var buf = new byte[8192];
+            try
+            {
+                while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
+                {
+                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
+                    if (result.MessageType == WebSocketMessageType.Close) break;
+                    var text = Encoding.UTF8.GetString(buf, 0, result.Count);
+                    ProcessMessage(text);
                 }
             }
             catch (OperationCanceledException) { }
+            catch (WebSocketException ex) { CoreLog.Info($"[CcbWS] WS 断开: {ex.Message}"); }
             catch (Exception ex) { CoreLog.Error($"[CcbWS] 接收异常: {ex.Message}"); }
+
+            _state = CcbClientState.Disconnected;
+            if (!ct.IsCancellationRequested) _ = ScheduleReconnect();
         }
 
         private void ProcessMessage(string json)
@@ -135,8 +224,8 @@ namespace RimWorldAgent.Core.CcbManager
             {
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                if (!root.TryGetProperty("type", out var typeEl)) return;
-                var type = typeEl.GetString();
+                if (!root.TryGetProperty("type", out var t)) return;
+                var type = t.GetString();
 
                 switch (type)
                 {
@@ -145,26 +234,15 @@ namespace RimWorldAgent.Core.CcbManager
                         break;
 
                     case "assistant":
-                        if (root.TryGetProperty("message", out var msg) &&
-                            msg.TryGetProperty("content", out var content))
-                        {
-                            if (content.ValueKind == JsonValueKind.String)
-                                OnAssistantText?.Invoke(content.GetString() ?? "");
-                            else if (content.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var block in content.EnumerateArray())
-                                {
-                                    if (block.TryGetProperty("type", out var bt) && bt.GetString() == "text")
-                                        OnAssistantText?.Invoke(block.GetProperty("text").GetString() ?? "");
-                                    else if (bt.GetString() == "tool_use")
-                                        OnToolUse?.Invoke(
-                                            block.GetProperty("id").GetString() ?? "",
-                                            block.GetProperty("name").GetString() ?? "",
-                                            block.TryGetProperty("input", out var input) ? input : (JsonElement?)null
-                                        );
-                                }
-                            }
-                        }
+                    case "user":
+                        ParseAssistantMessage(root);
+                        CountToolResults(root);
+                        ExtractUsageFromMessage(root);
+                        break;
+
+                    case "stream_event":
+                        ParseStreamEvent(root);
+                        ExtractUsageFromStreamEvent(root);
                         break;
 
                     case "result":
@@ -173,14 +251,162 @@ namespace RimWorldAgent.Core.CcbManager
                         OnResult?.Invoke(subtype ?? "unknown", stopReason);
                         break;
 
-                    case "user":
+                    case "aborted":
+                        OnAborted?.Invoke();
+                        break;
+
                     case "system":
-                    case "stream_event":
-                        // Agent 不需要处理这些消息类型
+                        if (root.TryGetProperty("subtype", out var sub) && sub.GetString() == "init"
+                            && root.TryGetProperty("model", out var modelEl))
+                            TokenUsageTracker.CurrentModel = modelEl.GetString() ?? "";
+                        break;
+
+                    case "error":
+                        var err = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
+                        CoreLog.Error($"[CcbWS] 服务器错误: {err}");
+                        break;
+
+                    case "pong":
+                        _lastPong = DateTime.UtcNow;
                         break;
                 }
             }
-            catch { /* 解析失败忽略 */ }
+            catch { }
         }
-    }
-}
+
+        private void ParseAssistantMessage(JsonElement root)
+        {
+            if (!root.TryGetProperty("message", out var msg)) return;
+            if (!msg.TryGetProperty("content", out var content)) return;
+
+            if (content.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var block in content.EnumerateArray())
+                {
+                    if (!block.TryGetProperty("type", out var bt)) continue;
+                    var blockType = bt.GetString();
+                    if (blockType == "text")
+                        OnAssistantText?.Invoke(block.GetProperty("text").GetString() ?? "");
+                    else if (blockType == "tool_use")
+                        OnToolUse?.Invoke(
+                            block.GetProperty("id").GetString() ?? "",
+                            block.GetProperty("name").GetString() ?? "",
+                            block.TryGetProperty("input", out var input) ? input : (JsonElement?)null
+                        );
+                }
+            }
+        }
+
+        private void ParseStreamEvent(JsonElement root)
+        {
+            if (!root.TryGetProperty("event", out var evt)) return;
+            if (!evt.TryGetProperty("type", out var et)) return;
+            var eventType = et.GetString();
+
+            // stream_event 中提取 assistant delta text 和 tool_use
+            if (eventType == "content_block_delta" && evt.TryGetProperty("delta", out var delta))
+            {
+                if (delta.TryGetProperty("type", out var dt) && dt.GetString() == "text_delta"
+                    && delta.TryGetProperty("text", out var txt))
+                    OnAssistantText?.Invoke(txt.GetString() ?? "");
+            }
+            else if (eventType == "content_block_start" && evt.TryGetProperty("content_block", out var cb))
+            {
+                if (cb.TryGetProperty("type", out var cbt) && cbt.GetString() == "tool_use"
+                    && evt.TryGetProperty("index", out var idx) && cb.TryGetProperty("id", out var tid))
+                {
+                    OnToolUse?.Invoke(tid.GetString() ?? "", cb.GetProperty("name").GetString() ?? "",
+                        cb.TryGetProperty("input", out var inp) ? inp : (JsonElement?)null);
+                }
+            }
+        }
+
+        // ========== 心跳 ==========
+
+        private void Heartbeat()
+        {
+            if (!IsReady) return;
+            var now = DateTime.UtcNow;
+
+            if ((now - _lastPing).TotalMilliseconds > PingIntervalMs)
+                _ = SendPing();
+
+            if (_lastPong != DateTime.MinValue && (now - _lastPong).TotalMilliseconds > PongTimeoutMs)
+            {
+                CoreLog.Error("[CcbWS] pong 超时，断开连接（将自动重连）");
+                _state = CcbClientState.Disconnected;
+                try { _ws?.CloseAsync(WebSocketCloseStatus.ProtocolError, "pong timeout", CancellationToken.None); } catch { }
+            }
+        }
+
+        private async Task SendPing()
+        {
+            try { await SendJson(new { type = "ping" }); _lastPing = DateTime.UtcNow; }
+            catch (Exception ex) { CoreLog.Error($"[CcbWS] ping 失败: {ex.Message}"); }
+        }
+
+        // ========== 自动重连 ==========
+
+        private async Task ScheduleReconnect()
+        {
+            if (_reconnecting || _shuttingDown) return;
+            _reconnecting = true;
+            try
+            {
+                while (true)
+                {
+                    _reconnectAttempts++;
+                    var delay = Math.Min(_reconnectDelayMs * _reconnectAttempts, MaxReconnectDelayMs);
+                    CoreLog.Info($"[CcbWS] {delay / 1000}s 后重连 (第 {_reconnectAttempts} 次)...");
+                    await Task.Delay(delay);
+                    if (_shuttingDown) break;
+                    if (string.IsNullOrEmpty(_url)) break;
+                    try { await ConnectAsync(); } catch { }
+                    if (_state != CcbClientState.Disconnected) break;
+                }
+            }
+            finally { _reconnecting = false; }
+        }
+
+        // ========== Token 提取（旧 CCClient 逻辑） ==========
+
+        private static void CountToolResults(JsonElement root)
+        {
+            var message = root.TryGetProperty("message", out var msg) ? msg : root;
+            if (!message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) return;
+            foreach (var block in content.EnumerateArray())
+                if (block.TryGetProperty("type", out var bt) && bt.GetString() == "tool_result")
+                    TokenUsageTracker.RecordToolResult(block.TryGetProperty("is_error", out var ie) && ie.GetBoolean());
+        }
+
+        private static void ExtractUsageFromMessage(JsonElement root)
+        {
+            if (!root.TryGetProperty("message", out var msgEl)) return;
+            if (msgEl.TryGetProperty("model", out var modelEl) && !string.IsNullOrEmpty(modelEl.GetString()))
+                TokenUsageTracker.CurrentModel = modelEl.GetString()!;
+            if (!msgEl.TryGetProperty("usage", out var u) || u.ValueKind != JsonValueKind.Object) return;
+            long inp = u.TryGetProperty("input_tokens", out var it) ? it.GetInt64() : 0;
+            long outp = u.TryGetProperty("output_tokens", out var ot) ? ot.GetInt64() : 0;
+            long cr = u.TryGetProperty("cache_read_input_tokens", out var c) ? c.GetInt64() : 0;
+            long cc = u.TryGetProperty("cache_creation_input_tokens", out var ct) ? ct.GetInt64() : 0;
+            if (inp > 0 || outp > 0) TokenUsageTracker.Record(TokenUsageTracker.CurrentModel, inp, outp, cr, cc, 0);
+        }
+
+        private static void ExtractUsageFromStreamEvent(JsonElement root)
+        {
+            if (!root.TryGetProperty("event", out var evt)) return;
+            if (!evt.TryGetProperty("type", out var et)) return;
+            var eventType = et.GetString();
+            JsonElement src = default;
+            if (eventType == "message_start" && evt.TryGetProperty("message", out src)) { }
+            else if (eventType == "message_delta" && evt.TryGetProperty("usage", out src)) { }
+            else return;
+            if (src.ValueKind != JsonValueKind.Object) return;
+            long inp = src.TryGetProperty("input_tokens", out var it) ? it.GetInt64() : 0;
+            long outp = src.TryGetProperty("output_tokens", out var ot) ? ot.GetInt64() : 0;
+            long cr = src.TryGetProperty("cache_read_input_tokens", out var c) ? c.GetInt64() : 0;
+            long cc = src.TryGetProperty("cache_creation_input_tokens", out var ct) ? ct.GetInt64() : 0;
+            if (inp > 0 || outp > 0) TokenUsageTracker.Record(TokenUsageTracker.CurrentModel, inp, outp, cr, cc, 0);
+        }
+
+        public void Dispose() => Disconnect();

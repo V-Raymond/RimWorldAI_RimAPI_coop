@@ -68,6 +68,9 @@ namespace RimWorldAgent.Core.AgentRuntime
             if (ActiveAgent == agentName) ActiveAgent = null;
         }
 
+        public static bool HasPendingEvents(string agentName)
+            => AgentEvents.TryGetValue(agentName, out var q) && !q.IsEmpty;
+
         public static string DrainEvents(string agentName)
         {
             if (!AgentEvents.TryGetValue(agentName, out var queue)) return "";

@@ -14,12 +14,6 @@ namespace RimWorldMCP.Harmony
             var harmony = new HarmonyLib.Harmony("com.rimworldmcp.notification");
             harmony.PatchAll(typeof(Hook_Notification).Assembly);
             McpLog.Info("Harmony notification patches installed.");
-
-            // 在 Def 加载完毕后启动 MCP 服务（主菜单即可用）
-            LongEventHandler.ExecuteWhenFinished(() =>
-            {
-                McpServiceManager.Start();
-            });
         }
 
         // ========== Letter 拦截 ==========
@@ -169,16 +163,7 @@ namespace RimWorldMCP.Harmony
             }
         }
 
-        // ========== 游戏生命周期：退出/返回主菜单时清理 Companion 进程 ==========
-
-        [HarmonyPatch(typeof(Game), nameof(Game.Dispose))]
-        public static class Patch_Game_Dispose
-        {
-            static void Postfix()
-            {
-                BridgeLifecycle.Stop();
-            }
-        }
+        // 游戏退出/返回主菜单清理由 Agent 侧 CcbManager 负责
 
         // ========== 分类辅助 ==========
 

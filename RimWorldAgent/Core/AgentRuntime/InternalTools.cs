@@ -1,10 +1,11 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.Skills;
+using SimpleMspServer.Mcp;
 
 namespace RimWorldAgent.Core.AgentRuntime
 {
@@ -18,20 +19,16 @@ namespace RimWorldAgent.Core.AgentRuntime
         public System.Func<JsonElement?, Task<(string result, bool exit)>>? Handler { get; set; }
     }
 
-    public static class InternalToolRegistry
+    public class InternalToolRegistry : IToolProvider
     {
-        private static readonly Dictionary<string, InternalTool> _tools = new();
+        public static InternalToolRegistry Instance { get; } = new InternalToolRegistry();
 
-        private static SkillRegistry? _skillRegistry;
+        private readonly Dictionary<string, InternalTool> _tools = new();
+        private SkillRegistry? _skillRegistry;
 
-        /// <summary>初始化 Skill 注册表，由 Loader 在启动时调用</summary>
-        public static void LoadSkills(string skillsDir)
-        {
-            _skillRegistry = new SkillRegistry();
-            _skillRegistry.LoadFromDirectory(skillsDir);
-        }
+        string IToolProvider.ProviderName => "AgentInternal";
 
-        static InternalToolRegistry()
+        private InternalToolRegistry()
         {
             Register(new InternalTool
             {
@@ -53,12 +50,17 @@ namespace RimWorldAgent.Core.AgentRuntime
                     return Task.FromResult((string.IsNullOrEmpty(summary) ? "战斗指挥官角色已退出。" : $"战斗指挥官已退出。\n总结: {summary}", true));
                 }
             });
+        }
 
-            // skill 工具由 InitializeSkillTools 动态注册
+        /// <summary>初始化 Skill 注册表，由 Loader 在启动时调用</summary>
+        public void LoadSkills(string skillsDir)
+        {
+            _skillRegistry = new SkillRegistry();
+            _skillRegistry.LoadFromDirectory(skillsDir);
         }
 
         /// <summary>在 SkillRegistry 加载后注册 skill 相关 Tool</summary>
-        public static void InitializeSkillTools()
+        public void InitializeSkillTools()
         {
             Register(new InternalTool
             {
@@ -104,20 +106,41 @@ namespace RimWorldAgent.Core.AgentRuntime
             });
         }
 
-        public static void Register(InternalTool tool) => _tools[tool.Name] = tool;
+        public void Register(InternalTool tool) => _tools[tool.Name] = tool;
 
-        /// <summary>是否内部 Tool</summary>
-        public static bool IsInternal(string name) => _tools.ContainsKey(name);
+        public bool IsInternal(string name) => _tools.ContainsKey(name);
 
-        /// <summary>执行内部 Tool，返回 (result, shouldExitSession)</summary>
-        public static async Task<(string result, bool exit)> ExecuteAsync(string name, JsonElement? args)
+        public async Task<(string result, bool exit)> ExecuteInternalAsync(string name, JsonElement? args)
         {
             if (_tools.TryGetValue(name, out var tool) && tool.Handler != null)
                 return await tool.Handler(args);
             return ($"内部工具 {name} 未注册", false);
         }
 
-        /// <summary>获取所有内部 Tool 定义（附加到 tools/list 结果中）</summary>
-        public static List<InternalTool> All => new(_tools.Values);
+        public List<InternalTool> All => new(_tools.Values);
+
+        // ===== IToolProvider =====
+
+        List<ToolDefinition> IToolProvider.GetDefinitions()
+        {
+            return _tools.Values.Select(t => new ToolDefinition
+            {
+                Name = t.Name,
+                Description = t.Description,
+                InputSchema = JsonSerializer.SerializeToElement(t.InputSchema)
+            }).ToList();
+        }
+
+        async Task<ToolCallResult> IToolProvider.ExecuteAsync(string name, JsonElement? args)
+        {
+            var (text, _) = await ExecuteInternalAsync(name, args);
+            return new ToolCallResult
+            {
+                Content = new List<ContentItem> { new ContentItem { Type = "text", Text = text } }
+            };
+        }
+
+        List<ResourceDefinition> IToolProvider.GetResources() => new List<ResourceDefinition>();
+        string? IToolProvider.ReadResource(string uri) => null;
     }
 }
