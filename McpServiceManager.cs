@@ -2,10 +2,10 @@ using System;
 using System.IO;
 using System.Threading;
 using RimWorldMCP.MapRendering;
-using RimWorldMCP.Mcp;
+using SimpleMspServer.Mcp;
 using RimWorldMCP.Skills;
 using RimWorldMCP.Tools;
-using RimWorldMCP.Transport;
+using SimpleMspServer.Transport;
 using Verse;
 
 namespace RimWorldMCP

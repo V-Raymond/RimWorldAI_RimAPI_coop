@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using RimWorldMCP.Harmony;
-using RimWorldMCP.Mcp;
+using SimpleMspServer.Mcp;
 using Verse;
 
 namespace RimWorldMCP.Tools

@@ -4,9 +4,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RimWorldMCP.Tools;
-using RimWorldMCP.Transport;
+using SimpleMspServer.Mcp;
+using SimpleMspServer.Transport;
 
-namespace RimWorldMCP.Mcp
+namespace RimWorldMCP
 {
     public class McpServer
     {
