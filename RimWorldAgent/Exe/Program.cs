@@ -23,11 +23,15 @@ namespace RimWorldAgent
 
             var mcpUrl = "http://localhost:9878";
             var modelName = "";
-            foreach (var arg in args)
+            for (int i = 0; i < args.Length; i++)
             {
-                if (arg == "--model" || arg == "-m") { var i = Array.IndexOf(args, arg); if (i >= 0 && i + 1 < args.Length) modelName = args[i + 1]; }
-                else if (arg.StartsWith("--model=")) modelName = arg.Substring("--model=".Length);
-                else if (arg.StartsWith("-m=")) modelName = arg.Substring("-m=".Length);
+                var arg = args[i];
+                if ((arg == "--model" || arg == "-m") && i + 1 < args.Length)
+                    modelName = args[++i];
+                else if (arg.StartsWith("--model="))
+                    modelName = arg.Substring("--model=".Length);
+                else if (arg.StartsWith("-m="))
+                    modelName = arg.Substring("-m=".Length);
                 else if (!arg.StartsWith("-"))
                     mcpUrl = arg;
             }
