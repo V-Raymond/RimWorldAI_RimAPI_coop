@@ -90,8 +90,8 @@ async function main(): Promise<void> {
   let currentProc = createResponseProcessor(
     queryIterator,
     CONFIG.projectPath,
-    // Agent Bus：SDK 所有消息 → Web + C# 客户端
-    (msg) => bus.publishSdkMessage(msg as Record<string, unknown>),
+    // Agent Bus：SDK 所有消息 → Web + C# 客户端（setImmediate 避免阻塞 SDK 迭代器）
+    (msg) => setImmediate(() => bus.publishSdkMessage(msg as Record<string, unknown>)),
     onInit,
   );
   let processResponses = currentProc.process;
@@ -118,8 +118,8 @@ async function main(): Promise<void> {
     currentProc = createResponseProcessor(
       queryIterator,
       CONFIG.projectPath,
-      // Agent Bus：SDK 所有消息 → Web + C# 客户端
-      (msg) => bus.publishSdkMessage(msg as Record<string, unknown>),
+      // Agent Bus：SDK 所有消息 → Web + C# 客户端（setImmediate 避免阻塞 SDK 迭代器）
+      (msg) => setImmediate(() => bus.publishSdkMessage(msg as Record<string, unknown>)),
       onInit,
     );
     processResponses = currentProc.process;

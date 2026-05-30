@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using RimWorldMCP.Harmony;
 using SimpleMspServer.Mcp;
@@ -15,6 +16,9 @@ namespace RimWorldMCP.Tools
         string SimpleMspServer.Mcp.IToolProvider.ProviderName => "RimWorldMCP";
         private readonly Dictionary<string, ITool> _tools = new();
         public IReadOnlyDictionary<string, ITool> AllTools => _tools;
+
+        /// <summary>并发控制：任何时候只允许一个工具在 MCP Server 侧执行</summary>
+        private static readonly SemaphoreSlim _gate = new(1, 1);
 
         /// <summary>工具结果后缀：Agent 通过 set_tool_result_suffix 设置，每次工具调用结果末尾自动追加</summary>
         public static volatile string ToolResultSuffix = "";
@@ -106,6 +110,9 @@ namespace RimWorldMCP.Tools
 
         public async Task<ToolCallResult> ExecuteAsync(string name, JsonElement? args)
         {
+            await _gate.WaitAsync();
+            try
+            {
             if (_tools.TryGetValue(name, out var tool))
             {
                 try
@@ -210,6 +217,8 @@ namespace RimWorldMCP.Tools
                 },
                 IsError = true
             };
+            }
+            finally { _gate.Release(); }
         }
     }
 }

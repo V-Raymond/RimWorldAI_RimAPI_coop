@@ -170,10 +170,10 @@ namespace RimWorldAgent.Core.AgentRuntime
             var config = AgentConfigs.Get(targetRole);
             if (config == null) return null;
 
-            // 恢复游戏速度 + 清除阶段
+            // 系统自动暂停 + 进入 PLAN，新 Agent 无需手动 enter_plan
+            EnterPlanPhase();
             if (PaceController != null)
-                await PaceController.EnsureResumed(SessionMcp);
-            ClearPhase();
+                await PaceController.PauseForPlanning(SessionMcp!);
 
             // 切换角色状态
             EndAgent(currentAgent);

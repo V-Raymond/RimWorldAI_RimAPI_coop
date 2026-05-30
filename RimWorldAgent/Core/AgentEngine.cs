@@ -200,7 +200,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
         }
 
-        /// <summary>Agent 调度：Scheduler 检查 → RunAgent → switch_agent 链</summary>
+        /// <summary>Agent 调度：Scheduler 检查 → RunAgent → switch_agent 递归链</summary>
         public async Task TickAsync()
         {
             if (_mcp == null || _ctx == null) return;
@@ -220,6 +220,17 @@ namespace RimWorldAgent.Core.AgentRuntime
             {
                 await RunAgentWithSwitchSupport(AgentConfigs.Combat);
             }
+
+            // Economy — 定时唤醒（每 4 游戏小时）
+            if (AgentOrchestrator.IsSleeping("economy")
+                && Scheduler.ShouldWake("economy", AgentConfigs.Economy.IntervalGameHours, currentTick))
+                await RunAgentWithSwitchSupport(AgentConfigs.Economy);
+
+            // Medic — 每天 + L3 健康事件
+            if (AgentOrchestrator.IsSleeping("medic")
+                && (AgentOrchestrator.IsNewDay("medic")
+                    || AgentOrchestrator.HasPendingEvents("medic")))
+                await RunAgentWithSwitchSupport(AgentConfigs.Medic);
         }
 
         private async Task RunAgentWithSwitchSupport(AgentConfig config)
@@ -227,6 +238,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             if (_mcp == null || _ctx == null || _ccbWs == null || !_ccbWs.IsReady) return;
 
             AgentOrchestrator.NextAgentRequest = null;
+            AgentLoop.SwitchCount = 0;
             AgentOrchestrator.BeginAgent(config.Name);
             _logInfo($"[AgentEngine] 唤醒 {config.Name} (Load={Scheduler.LoadScore})");
 
@@ -241,17 +253,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             AgentOrchestrator.EndAgent(endedAgent);
             _logInfo($"[AgentEngine] {endedAgent} 休眠");
 
-            var nextAgent = AgentOrchestrator.NextAgentRequest;
-            AgentOrchestrator.NextAgentRequest = null;
-            if (!string.IsNullOrEmpty(nextAgent) && AgentOrchestrator.IsSleeping(nextAgent))
-            {
-                var nextConfig = AgentConfigs.Get(nextAgent);
-                if (nextConfig != null)
-                {
-                    _logInfo($"[AgentEngine] switch_agent → {nextAgent}");
-                    await RunAgentWithSwitchSupport(nextConfig);
-                }
-            }
+            // 原地切换由 ToolDispatcher 在工具返回后立即执行（SwitchAgentInSession），不需要在此递归
         }
 
         public void Dispose()

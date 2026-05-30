@@ -7,7 +7,7 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
     public class Tool_TodoSetStatus : IInternalTool
     {
         public string Name => "todo_set_status";
-        public string Description => "设置待办任务状态。done/cancelled 不会删除任务，保留记录。";
+        public string Description => "设置待办任务状态。";
 
         public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
         {
@@ -15,7 +15,7 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
             properties = new
             {
                 id = new { type = "string", description = "任务 ID" },
-                status = new { type = "string", description = "新状态: pending / done / cancelled" }
+                status = new { type = "string", description = "新状态: pending / done" }
             },
             required = new[] { "id", "status" }
         });
@@ -28,8 +28,8 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
                 return Task.FromResult(("参数 id 和 status 不能为空。", false));
             var id = idEl.GetString()!;
             var status = statusEl.GetString()!.ToLower();
-            if (status != "pending" && status != "done" && status != "cancelled")
-                return Task.FromResult(($"无效状态: {status}。可选: pending, done, cancelled", false));
+            if (status != "pending" && status != "done")
+                return Task.FromResult(($"无效状态: {status}。可选: pending, done", false));
             var found = TodoStore.UpdateStatus(id, status);
             return Task.FromResult((found ? $"任务 [{id}] 状态已更新为 {status}" : $"任务 [{id}] 不存在", false));
         }

@@ -257,7 +257,6 @@ export function getChatPageHtml(config: ChatPageConfig): string {
   .todo-item .todo-prio.p-low { color: var(--muted); }
   .todo-item .todo-desc { flex: 1; color: var(--text); word-break: break-all; overflow-wrap: break-word; }
   .todo-item.done .todo-desc { color: var(--muted); text-decoration: line-through; }
-  .todo-item.cancelled .todo-desc { color: var(--muted-subtle); text-decoration: line-through; }
   .todo-item .todo-id { font-size: 10px; color: var(--muted); flex-shrink: 0; }
 
   /* SDKTasks */
@@ -967,6 +966,7 @@ export function getChatPageHtml(config: ChatPageConfig): string {
     if (label) label.textContent = '思考过程';
     var cursor = panel.querySelector('.th-cursor');
     if (cursor) cursor.style.display = 'none';
+  }
 
   function appendThinkingDelta(panel, delta) {
     if (!panel) return;
@@ -1079,11 +1079,10 @@ export function getChatPageHtml(config: ChatPageConfig): string {
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
       var isDone = item.status === 'done';
-      var isCancelled = item.status === 'cancelled';
-      if (!isDone && !isCancelled) pendingCount++;
+      if (!isDone) pendingCount++;
 
       var div = document.createElement('div');
-      var extraCls = isDone ? ' done' : isCancelled ? ' cancelled' : '';
+      var extraCls = isDone ? ' done' : '';
       div.className = 'todo-item' + extraCls;
 
       var prio = document.createElement('span');
@@ -1723,10 +1722,12 @@ export function getChatPageHtml(config: ChatPageConfig): string {
   var scrollEventTimer = 0;
   var SNAP_THRESHOLD = 50;   // 距底部 < 50px 视为已到底，恢复磁吸
   var BREAK_THRESHOLD = 100;  // 距底部 > 100px 才断磁，避免快速消息误触
+  var justScrolledToBottom = false;
 
   function scrollNow() {
     cancelAnimationFrame(scrollRaf);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    justScrolledToBottom = true;
     scrollRaf = 0;
   }
 
@@ -1749,8 +1750,9 @@ export function getChatPageHtml(config: ChatPageConfig): string {
           userScrolledUp = false;
           newMsgPill.style.display = 'none';
         }
+      } else if (justScrolledToBottom) {
+        justScrolledToBottom = false;
       } else {
-        // 磁吸中：检查是否用户上滚超过阈值，断磁
         if (diff > BREAK_THRESHOLD) {
           userScrolledUp = true;
           newMsgPill.style.display = 'block';

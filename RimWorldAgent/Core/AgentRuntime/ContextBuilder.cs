@@ -52,6 +52,19 @@ namespace RimWorldAgent.Core.AgentRuntime
             sb.AppendLine($"- 阶段: {AgentOrchestrator.CurrentPhase}");
             sb.AppendLine($"- 可见工具: {config.ToolCategories.Count} 类");
 
+            // Layer 7: 当前模式指引
+            var phaseHint = AgentOrchestrator.CurrentPhase switch
+            {
+                GamePhase.Plan => "## 当前模式\n游戏已暂停，处于 **PLAN 模式**。请直接制定计划，无需调用 `enter_plan()`。\n计划完成后调用 `enter_act()` 进入 ACT 模式执行，工作全部完成后调用 `switch_agent(\"overseer\")` 回到总督。",
+                GamePhase.Act => "## 当前模式\n处于 **ACT 模式**，请执行计划。完成后调用 `switch_agent(\"overseer\")` 回到总督。",
+                _ => null
+            };
+            if (phaseHint != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine(phaseHint);
+            }
+
             return sb.ToString().TrimEnd();
         }
 

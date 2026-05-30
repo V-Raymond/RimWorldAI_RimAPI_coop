@@ -17,7 +17,7 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
             type = "object",
             properties = new
             {
-                status = new { type = "string", description = "过滤状态: pending / done / cancelled（不传返回全部）" }
+                status = new { type = "string", description = "过滤状态: pending / done（不传返回全部）" }
             }
         });
 

@@ -12,6 +12,9 @@ namespace RimWorldAgent.Core.AgentRuntime
     /// <summary>EXE / MOD 共享的 Agent 主循环逻辑</summary>
     public static class AgentLoop
     {
+        /// <summary>原地 switch_agent 计数。RunSessionAsync 用此跳过旧 Agent 的 result，只在新 Agent 的 result 到来时结束 session。</summary>
+        public static int SwitchCount;
+
         /// <summary>从 get_world_summary Markdown 文本解析 SchedulerInput</summary>
         public static SchedulerInput ParseSchedulerInput(string text)
         {
@@ -107,9 +110,18 @@ namespace RimWorldAgent.Core.AgentRuntime
             var tcs = new TaskCompletionSource<bool>();
             var pendingTools = 0;
             var resultReceived = false;
+            var lastSwitchCount = Volatile.Read(ref SwitchCount);
 
             void OnResult(string subtype, string? _)
             {
+                // 原地切换后：跳过旧 Agent 的 result，等待新 Agent 的 result
+                var currentSw = Volatile.Read(ref SwitchCount);
+                if (currentSw != lastSwitchCount)
+                {
+                    lastSwitchCount = currentSw;
+                    CoreLog.Info($"[{AgentOrchestrator.ActiveAgent ?? config.Name}] 跳过旧 result ({subtype}), SwitchCount={currentSw}");
+                    return;
+                }
                 CoreLog.Info($"[{config.Name}] 回合结束: {subtype} (pendingTools={Volatile.Read(ref pendingTools)})");
                 if (Volatile.Read(ref pendingTools) == 0)
                     tcs.TrySetResult(true);

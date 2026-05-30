@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.CcbManager;
 using RimWorldAgent.Core.Mcp;
@@ -38,7 +39,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                         if (context != null)
                         {
                             await ccbWs.SendChat(context);
-                            log($"原地切换 → {target}，Prompt 已发送 ({context.Length} 字符)");
+                            Interlocked.Increment(ref AgentLoop.SwitchCount);
+                            log($"原地切换 → {target}，Prompt 已发送 ({context.Length} 字符), SwitchCount={AgentLoop.SwitchCount}");
                         }
                     }
                 }
