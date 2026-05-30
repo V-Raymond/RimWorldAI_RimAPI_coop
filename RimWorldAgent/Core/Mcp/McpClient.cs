@@ -25,6 +25,7 @@ namespace RimWorldAgent.Core.Mcp
 
         public event Action<ColonyEvent>? OnGameEvent;
         public event Action<int>? OnGameTick;
+        public event Action<SchedulerInput>? OnWorldState;
 
         public McpClient(string baseUrl = "http://localhost:9877")
         {
@@ -136,6 +137,19 @@ namespace RimWorldAgent.Core.Mcp
                             {
                                 var gameTick = root.TryGetProperty("tick", out var tk) && tk.TryGetInt32(out var tv) ? tv : 0;
                                 if (gameTick > 0) OnGameTick?.Invoke(gameTick);
+                            }
+                            else if (lastMethod == "game/world-state")
+                            {
+                                OnWorldState?.Invoke(new SchedulerInput
+                                {
+                                    ColonistCount = root.TryGetProperty("colonists", out var co) ? co.GetInt32() : 0,
+                                    IdleCount = root.TryGetProperty("idle", out var id) ? id.GetInt32() : 0,
+                                    EnemyCount = root.TryGetProperty("enemies", out var en) ? en.GetInt32() : 0,
+                                    DownedEnemyCount = root.TryGetProperty("downed", out var dn) ? dn.GetInt32() : 0,
+                                    FoodDays = root.TryGetProperty("foodDays", out var fd) ? fd.GetSingle() : 0f,
+                                    MedicineCount = root.TryGetProperty("medicine", out var md) ? md.GetInt32() : 0,
+                                    CurrentTick = AgentOrchestrator.GameTick
+                                });
                             }
                             else
                             {

@@ -128,18 +128,7 @@ namespace RimWorldAgent
         {
             if (_mcp == null || _ctx == null) return;
 
-            try
-            {
-                var summary = await _mcp.CallTool("get_world_summary");
-                var input = AgentLoop.ParseSchedulerInput(summary);
-                Scheduler.Tick(input);
-            }
-            catch (Exception ex)
-            {
-                CoreLog.Warn($"[agent-mod] get_world_summary 失败: {ex.Message}");
-                return;
-            }
-
+            // Scheduler 已由 SSE game/world-state 自动更新，无需 HTTP 轮询
             var currentTick = AgentOrchestrator.GameTick;
             foreach (var config in AgentConfigs.All)
             {

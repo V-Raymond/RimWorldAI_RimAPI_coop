@@ -50,6 +50,9 @@ namespace RimWorldAgent.Core.AgentRuntime
             // tick 事件 → 更新游戏 tick
             mcp.OnGameTick += tick => AgentOrchestrator.GameTick = tick;
 
+            // 世界状态 → 更新 Scheduler
+            mcp.OnWorldState += input => Scheduler.Tick(input);
+
             // 游戏事件 → 按 Route 精确路由（降级到旧逻辑兜底）
             mcp.OnGameEvent += evt =>
             {
