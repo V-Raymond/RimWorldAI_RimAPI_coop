@@ -348,8 +348,8 @@ namespace RimWorldAgent.Core.CcbManager
 
         private async Task SendPing()
         {
-            try { await SendJson(new { type = "ping" }); _lastPing = DateTime.UtcNow; }
-            catch (Exception ex) { CoreLog.Error($"[CcbWS] ping 失败: {ex.Message}"); }
+            try { await SendJson(new { type = "keepalive" }); _lastPing = DateTime.UtcNow; }
+            catch (Exception ex) { CoreLog.Error($"[CcbWS] keepalive 失败: {ex.Message}"); }
         }
 
         // ========== 自动重连 ==========

@@ -155,6 +155,7 @@ export function createWSServer(
           break;
 
         case 'ping':
+        case 'keepalive':
           sendJson(ws, { type: 'pong' });
           break;
 
