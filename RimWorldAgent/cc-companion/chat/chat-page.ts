@@ -138,10 +138,11 @@ export function getChatPageHtml(config: ChatPageConfig): string {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;
   }
   .header-agent {
-    font-size: 11px; color: var(--blue); font-weight: 500;
-    padding: 1px 8px; border-radius: 4px;
+    font-size: 13px; color: var(--blue); font-weight: 600;
+    padding: 4px 12px; border-radius: 6px;
     background: var(--blue-bg); border: 1px solid var(--blue-border);
     white-space: nowrap; flex-shrink: 0;
+    letter-spacing: 0.3px;
   }
   #info-btn {
     background: none; border: 1px solid var(--border-strong); color: var(--muted);

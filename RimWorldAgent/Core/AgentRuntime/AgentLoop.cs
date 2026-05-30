@@ -36,6 +36,13 @@ namespace RimWorldAgent.Core.AgentRuntime
         {
             _statusWs = ccbWs;
             _budgetLimit = ccbWs.BudgetLimit;
+
+            // 连接后立即推送当前状态
+            if (ccbWs.IsReady)
+            {
+                _ = ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.AgentRoleDisplay });
+                _ = ccbWs.SendEvent("budget-update", new { used = TokenUsageTracker.TotalAllTokens, limit = _budgetLimit, action = "Block" });
+            }
         }
 
         static AgentLoop()
