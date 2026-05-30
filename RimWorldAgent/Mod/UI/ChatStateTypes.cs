@@ -6,7 +6,6 @@ using Verse;
 
 namespace RimWorldAgent
 {
-    public static class BudgetStatus { public const string Ok = ""; public const string Warning = "Warning"; public const string Critical = "Critical"; public const string Exceeded = "Exceeded"; }
     public enum ChatRole { User, Assistant }
     public enum ChatState { Streaming, Done, Error }
     public enum ToolStatus { Running, Completed, Failed }
@@ -41,7 +40,7 @@ namespace RimWorldAgent
     public static class ChatDisplayState
     {
         public static event Action? OnChanged;
-        public static string CurrentBudgetStatus = "";
+        public static BudgetStatus CurrentBudgetStatus = BudgetStatus.Ok;
         public static float CurrentBudgetPercent;
         public static string CurrentBudgetText = "";
 
@@ -75,11 +74,6 @@ namespace RimWorldAgent
     {
         public static string BuildGameContext() => "";
         public static string BuildColonyOverview(Map map, List<Pawn> colonists, int count) => "";
-    }
-
-    public static class TokenUsageTracker
-    {
-        public static string GetCompactDisplay(long limit) => "Token --";
     }
 
     public static class ToolDisplayNames

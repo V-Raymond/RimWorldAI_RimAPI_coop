@@ -11,11 +11,8 @@
     <StartupObject>RimWorldAgent.Program</StartupObject>
   </PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <OutputPath>..\publish\RimWorldAgent\1.6\Assemblies\</OutputPath>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
-    <OutputPath>..\publish\RimWorldAgent\1.6\Assemblies\</OutputPath>
+  <PropertyGroup>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -46,32 +43,32 @@
     <ProjectReference Include="..\SimpleMspServer\SimpleMspServer.csproj" />
   </ItemGroup>
 
-  <!-- 构建前清空根 publish -->
-  <Target Name="CleanPublish" BeforeTargets="BeforeBuild">
-    <RemoveDir Directories="..\publish\RimWorldAgent\1.6\Assemblies" ContinueOnError="true" />
+  <!-- 构建前清空 publish（Build 触发） -->
+  <Target Name="CleanPublishBeforeBuild" BeforeTargets="CoreCompile">
+    <RemoveDir Directories="..\publish\RimWorldAgent" ContinueOnError="true" />
+  </Target>
+  <!-- Clean 时清空 publish（Clean 触发） -->
+  <Target Name="CleanPublishOnClean" AfterTargets="CoreClean">
+    <RemoveDir Directories="..\publish\RimWorldAgent" ContinueOnError="true" />
   </Target>
 
-  <!-- 从 resource/ 复制 MOD 元数据到根 publish -->
-  <Target Name="CopyAbout" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\resource\About\About.xml"
-          DestinationFolder="..\publish\RimWorldAgent\About\" />
-  </Target>
-  <Target Name="CopySkills" AfterTargets="Build">
+  <!-- 构建完成后：复制 DLL + 依赖 + 资源到 publish -->
+  <Target Name="PublishAgent" AfterTargets="Build">
+    <MakeDir Directories="..\publish\RimWorldAgent\1.6\Assemblies" />
     <ItemGroup>
-      <SkillFiles Include="$(MSBuildProjectDirectory)\resource\Skills\*.md" />
+      <PublishFiles Include="$(OutputPath)*.dll;$(OutputPath)*.exe" Exclude="$(OutputPath)Assembly-CSharp.dll;$(OutputPath)UnityEngine*.dll;$(OutputPath)System.Net.Http.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(SkillFiles)"
-          DestinationFolder="..\publish\RimWorldAgent\Skills\" />
-  </Target>
-  <Target Name="CopyReadme" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\README.md"
-          DestinationFolder="..\publish\RimWorldAgent\"
-          Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
-  </Target>
-  <Target Name="CopyCcCompanion" AfterTargets="Build">
+    <Copy SourceFiles="@(PublishFiles)" DestinationFolder="..\publish\RimWorldAgent\1.6\Assemblies" />
+    <!-- MOD 元数据 -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\resource\About\About.xml" DestinationFolder="..\publish\RimWorldAgent\About" />
+    <ItemGroup>
+      <SkillMdFiles Include="$(MSBuildProjectDirectory)\resource\Skills\*.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SkillMdFiles)" DestinationFolder="..\publish\RimWorldAgent\Skills" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\README.md" DestinationFolder="..\publish\RimWorldAgent" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+    <!-- cc-companion -->
     <MakeDir Directories="..\publish\RimWorldAgent\cc-companion" />
-    <Exec Command="xcopy &quot;$(MSBuildProjectDirectory)\cc-companion\*&quot; &quot;..\publish\RimWorldAgent\cc-companion\&quot; /S /Y /I /EXCLUDE:$(MSBuildProjectDirectory)\cc-companion\.copyignore"
-          Condition="Exists('$(MSBuildProjectDirectory)\cc-companion')"
-          IgnoreExitCode="true" />
+    <Exec Command="xcopy /S /Y /I /EXCLUDE:$(MSBuildProjectDirectory)\cc-companion\.copyignore &quot;$(MSBuildProjectDirectory)\cc-companion\*&quot; &quot;..\publish\RimWorldAgent\cc-companion\&quot;" Condition="Exists('$(MSBuildProjectDirectory)\cc-companion')" IgnoreExitCode="true" />
   </Target>
+
 </Project>

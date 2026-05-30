@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using RimWorldAgent.Core.AgentRuntime;
 
 namespace RimWorldAgent.Core.CcbManager
 {
@@ -410,3 +411,5 @@ namespace RimWorldAgent.Core.CcbManager
         }
 
         public void Dispose() => Disconnect();
+    }
+}
