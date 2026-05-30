@@ -34,6 +34,7 @@ namespace RimWorldAgent.Core.Mcp
             _baseUrl = baseUrl.TrimEnd('/');
             _http = new HttpClient { BaseAddress = new Uri(_baseUrl + "/"), Timeout = TimeSpan.FromSeconds(120) };
             _connectTask = ConnectAsync();
+            CoreLog.Info($"[McpClient] 正在连接 MCP: {_baseUrl}");
         }
 
         private async Task<ModelContextProtocol.Client.McpClient> ConnectAsync()
@@ -136,7 +137,7 @@ namespace RimWorldAgent.Core.Mcp
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
                     var detail = UnwrapException(ex);
-                    CoreLog.Error($"[McpClient] SSE 断开: {detail}，3s 后重连");
+                    CoreLog.Error($"[McpClient] SSE 断开 ({_baseUrl}/events): {detail}，3s 后重连");
                     try { await Task.Delay(3000, ct); } catch (OperationCanceledException) { break; }
                 }
             }

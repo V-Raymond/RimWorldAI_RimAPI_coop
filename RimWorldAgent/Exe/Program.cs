@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.AgentRuntime;
@@ -29,7 +28,8 @@ namespace RimWorldAgent
                 if (arg == "--model" || arg == "-m") { var i = Array.IndexOf(args, arg); if (i >= 0 && i + 1 < args.Length) modelName = args[i + 1]; }
                 else if (arg.StartsWith("--model=")) modelName = arg.Substring("--model=".Length);
                 else if (arg.StartsWith("-m=")) modelName = arg.Substring("-m=".Length);
-                else if (!arg.StartsWith("-")) mcpUrl = arg;
+                else if (!arg.StartsWith("-"))
+                    mcpUrl = arg;
             }
             if (!string.IsNullOrEmpty(modelName)) Console.WriteLine($"  模型: {modelName}");
             var sessionDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "claude-sessions", "dev-session");
@@ -67,13 +67,7 @@ namespace RimWorldAgent
             Console.WriteLine("  AgentMCP: :9878 (内部 Tool + Skills)");
 
             using var mcp = new McpClient(mcpUrl);
-            mcp.OnGameEvent += evt =>
-            {
-                if (evt.Severity == "Critical" && evt.Category == "Combat")
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Combat);
-                else if (evt.Severity != "Critical")
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Overseer);
-            };
+            AgentLoop.WireEvents(mcp);
             mcp.StartSse();
 
             var ctx = new ContextBuilder(mcp);
@@ -90,7 +84,7 @@ namespace RimWorldAgent
                     try
                     {
                         var summary = await mcp.CallTool("get_world_summary");
-                        var input = ParseSummaryToInput(summary);
+                        var input = AgentLoop.ParseSchedulerInput(summary);
                         Scheduler.Tick(input);
                         AgentOrchestrator.GameDay = input.CurrentTick / 60000;
                     }
@@ -122,7 +116,7 @@ namespace RimWorldAgent
                             Console.WriteLine($"[Prompt] {prompt.Length} 字符");
 
                             // 通过 CCB WebSocket 发送给 Claude
-                            await RunAgentSession(config, prompt, mcp);
+                            await RunAgentViaCcb(config, prompt, mcp);
 
                             AgentOrchestrator.EndAgent(config.Name);
                             Console.WriteLine($"=== {config.Name} 休眠 ===");
@@ -136,7 +130,7 @@ namespace RimWorldAgent
                         Console.WriteLine("=== Combat 唤醒 ===");
                         var cc = AgentConfigs.Combat;
                         var cp = await ctx.BuildAsync(cc);
-                        await RunAgentSession(cc, cp, mcp);
+                        await RunAgentViaCcb(cc, cp, mcp);
                         AgentOrchestrator.EndAgent("combat");
                         Console.WriteLine("=== Combat 休眠 ===");
                     }
@@ -149,40 +143,9 @@ namespace RimWorldAgent
             Console.WriteLine("RimWorldAgent 退出");
         }
 
-        private static SchedulerInput ParseSummaryToInput(string text)
+        private static async Task RunAgentViaCcb(AgentConfig config, string prompt, McpClient mcp)
         {
-            var input = new SchedulerInput { CurrentTick = Environment.TickCount };
-            if (string.IsNullOrEmpty(text)) return input;
-
-            // 简单解析：从 Markdown 表格中提取
-            foreach (var line in text.Split('\n'))
-            {
-                var t = line.Trim();
-                if (t.Contains("殖民者") && t.Contains("|")) input.ColonistCount = ParseInt(t);
-                else if (t.Contains("空闲")) input.IdleCount = ParseInt(t);
-                else if (t.Contains("食物") && t.Contains("天")) input.FoodDays = ParseFloat(t);
-                else if (t.Contains("敌人")) input.EnemyCount = ParseInt(t);
-                else if (t.Contains("药品")) input.MedicineCount = ParseInt(t);
-            }
-            return input;
-        }
-
-        private static async Task RunAgentSession(AgentConfig config, string prompt, McpClient mcp)
-        {
-            var tcs = new TaskCompletionSource<bool>();
             using var ccbWs = new CcbWebSocket();
-
-            ccbWs.OnResult += (subtype, _) =>
-            {
-                Console.WriteLine($"  [{config.Name}] 回合结束: {subtype}");
-                tcs.TrySetResult(true);
-            };
-
-            ccbWs.OnToolUse += async (toolId, toolName, input) =>
-            {
-                await ToolDispatcher.HandleAsync(ccbWs, mcp, toolId, toolName, input,
-                    msg => Console.WriteLine($"  [{config.Name}] {msg}"));
-            };
 
             ccbWs.OnAssistantText += text =>
             {
@@ -190,27 +153,9 @@ namespace RimWorldAgent
                     Console.WriteLine($"  [{config.Name}] {text.Substring(0, Math.Min(120, text.Length))}...");
             };
 
-            if (!await ccbWs.ConnectAsync()) { Console.WriteLine($"  [{config.Name}] CCB 连接失败"); return; }
+            if (!await ccbWs.ConnectAsync()) { CoreLog.Error($"[{config.Name}] CCB 连接失败"); return; }
 
-            // 工具由 CCB SDK 自动从 settings.json MCP server 发现
-            await ccbWs.SendChat(prompt);
-
-            // 等待 Claude 完成（含 tool call 循环）
-            var timeout = Task.Delay(config.Name == "combat" ? 300000 : 120000);
-            await Task.WhenAny(tcs.Task, timeout);
-
-            // 写 Memory
-            try
-            {
-                var day = AgentOrchestrator.GameDay;
-                MemoryManager.Append(config.Name, new MemoryEntry
-                {
-                    Day = day,
-                    Insight = $"Load={Scheduler.LoadScore}({Scheduler.Mode}), Session={DateTime.Now:HH:mm}",
-                    Type = "session"
-                });
-            }
-            catch { /* Memory 写入失败不影响主流程 */ }
+            await AgentLoop.RunSessionAsync(config, prompt, mcp, ccbWs);
         }
 
         private static string? FindCcbDir()
@@ -223,8 +168,5 @@ namespace RimWorldAgent
             if (Directory.Exists(src) && File.Exists(Path.Combine(src, "package.json"))) return src;
             return null;
         }
-
-        private static int ParseInt(string s) { foreach (var p in s.Split('|')) if (int.TryParse(p.Trim(), out var v)) return v; return 0; }
-        private static float ParseFloat(string s) { foreach (var p in s.Split('|')) if (float.TryParse(p.Trim(), out var v)) return v; return 0f; }
     }
 }

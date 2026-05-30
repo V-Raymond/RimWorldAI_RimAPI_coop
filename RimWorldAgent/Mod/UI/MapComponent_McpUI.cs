@@ -48,14 +48,18 @@ namespace RimWorldAgent
             if (Widgets.ButtonImage(btnRect, TexButton.Info))
             {
                 if (isOpen)
-                    Find.WindowStack.WindowOfType<Dialog_AiChat>()?.Close();
-                else
-                    Find.WindowStack.Add(new Dialog_AiChat());
-
-                if (isOpen)
                     SoundDefOf.Tick_Low.PlayOneShotOnCamera(null);
                 else
                     SoundDefOf.Tick_High.PlayOneShotOnCamera(null);
+
+                // 不能在 WindowStack 遍历期间直接 Add/Close，延后到下一帧
+                LongEventHandler.ExecuteWhenFinished(() =>
+                {
+                    if (isOpen)
+                        Find.WindowStack.WindowOfType<Dialog_AiChat>()?.Close();
+                    else
+                        Find.WindowStack.Add(new Dialog_AiChat());
+                });
             }
             GUI.color = origColor;
 

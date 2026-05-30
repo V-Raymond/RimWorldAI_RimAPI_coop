@@ -85,6 +85,29 @@ dotnet build RimWorldAgent/RimWorldAgent.csproj  # 单独 Agent
 - 游戏操作通过 MCP Tool 调用
 - TaskBoard/Memory 持久化为 JSON
 
+### 异常处理规范
+
+**任何时候捕获异常都不允许忽略（禁止空 catch）**。每个 catch 必须记录日志，包含异常类型和原始错误信息。涉及外部调用（HTTP、WebSocket、文件 I/O、进程管理）时必须展开 `InnerException` 链输出完整堆栈。
+
+**格式**：`$"[模块标识] 操作描述: {ex.GetType().Name}: {ex.Message}"`
+
+**UnwrapException 辅助方法**（Core 层共享）：
+```csharp
+internal static string UnwrapException(Exception ex)
+{
+    var sb = new StringBuilder();
+    while (ex != null)
+    {
+        if (sb.Length > 0) sb.Append(" → ");
+        sb.Append($"{ex.GetType().Name}: {ex.Message}");
+        ex = ex.InnerException;
+    }
+    return sb.ToString();
+}
+```
+
+**允许精简**：`OperationCanceledException` 无需日志，保留空 catch
+
 ## Claude Code 桥接
 
 游戏事件通过 WebSocket 推送到本地 Node.js 进程（CC Companion），Companion 使用 Claude Agent SDK 与 Claude API 通信。Claude 的响应广播回游戏内聊天窗口。

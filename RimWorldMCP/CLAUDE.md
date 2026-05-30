@@ -437,6 +437,52 @@ Skill 是领域知识文件（Markdown + YAML frontmatter），存放在 `Skills
 
 ### 开发规范
 
+**0. 异常处理必须记录详细信息**
+
+**任何时候捕获异常都不允许忽略（空 catch / 空 catch(Exception) / `// ignored` 注释）。每个 catch 必须：**
+- 输出日志，包含异常类型名称、原始报错信息 `ex.Message`
+- 使用 `CoreLog`（MCP 侧）/ `Log.Warning` 或 `Log.Error`（Verse 侧）/ `_log`（SimpleMspServer 侧）等合适的日志出口
+- 格式：`$"[组件标识] 操作描述失败: {ex.GetType().Name}: {ex.Message}"`
+- 涉及外部调用（HTTP、WebSocket、文件 I/O、进程管理）时额外展开 `InnerException` 链
+
+**正确示例：**
+```csharp
+// 简单操作
+catch (Exception ex) { Log.Warning($"[ToolName] 读取数据失败: {ex.Message}"); }
+
+// 外部调用 — 展开完整链
+catch (Exception ex) when (!ct.IsCancellationRequested)
+{
+    var detail = UnwrapException(ex);
+    CoreLog.Error($"[McpClient] SSE 断开: {detail}");
+}
+
+static string UnwrapException(Exception ex)
+{
+    var sb = new StringBuilder();
+    while (ex != null)
+    {
+        if (sb.Length > 0) sb.Append(" → ");
+        sb.Append($"{ex.GetType().Name}: {ex.Message}");
+        ex = ex.InnerException;
+    }
+    return sb.ToString();
+}
+```
+
+**错误示例：**
+```csharp
+try { DoSomething(); } catch { }                 // 禁止
+try { DoSomething(); } catch (Exception) { }      // 禁止
+catch { /* ignored */ }                            // 禁止
+catch (Exception) { /* ignored */ }                // 禁止
+```
+
+**允许的精简场景（仍需记录）**：
+- `OperationCanceledException` — 异步取消，保留 `catch (OperationCanceledException) { }`，日志可选
+
+---
+
 **1. 新增 Tool 先查游戏源码**
 
 开发任何新 Tool 时，第一步是到 `F:\RiderProjects\Assembly-CSharp\` 反编译源码中追踪完整链路：用户在游戏界面点击 → Designator/Command → JobGiver/JobDriver → 游戏执行。理解原版如何处理输入验证、资源检查、失败路径，然后尽量复用游戏原有逻辑（Designator、Job、Bill 等），不要凭空造轮子。

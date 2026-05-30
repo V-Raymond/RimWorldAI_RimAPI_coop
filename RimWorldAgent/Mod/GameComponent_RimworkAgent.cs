@@ -1,7 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.IO;
-using System.Text.Json;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.AgentRuntime;
 using RimWorldAgent.Core.CcbManager;
@@ -94,13 +92,7 @@ namespace RimWorldAgent
             else Log.Warning("[agent-mod] CCB WebSocket 连接失败，事件转发不可用");
 
             _mcp = new McpClient($"http://localhost:{mcpPort}");
-            _mcp.OnGameEvent += evt =>
-            {
-                if (evt.Severity == "Critical" && evt.Category == "Combat")
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Combat);
-                else if (evt.Severity != "Critical")
-                    AgentOrchestrator.DispatchEvent(evt, EventRoute.Overseer);
-            };
+            AgentLoop.WireEvents(_mcp);
             _mcp.StartSse();
 
             _ctx = new ContextBuilder(_mcp);
@@ -137,14 +129,16 @@ namespace RimWorldAgent
 
             try
             {
-                // 1. 获取世界状态
                 var summary = await _mcp.CallTool("get_world_summary");
-                var input = ParseToSchedulerInput(summary);
+                var input = AgentLoop.ParseSchedulerInput(summary);
                 Scheduler.Tick(input);
                 AgentOrchestrator.GameDay = input.CurrentTick / 60000;
-
             }
-            catch { /* 轮询失败不影响主循环，下次重试 */ }
+            catch (Exception ex)
+            {
+                CoreLog.Warn($"[agent-mod] get_world_summary 失败: {ex.Message}");
+                return;
+            }
 
             var currentTick = Environment.TickCount;
             foreach (var config in AgentConfigs.All)
@@ -164,56 +158,12 @@ namespace RimWorldAgent
                     Log.Message($"[agent-mod] 唤醒 {config.Name} (Load={Scheduler.LoadScore})");
 
                     var prompt = await _ctx.BuildAsync(config);
-                    await RunAgentSession(config, prompt);
+                    await AgentLoop.RunSessionAsync(config, prompt, _mcp, _ccbWs!);
 
                     AgentOrchestrator.EndAgent(config.Name);
                     Log.Message($"[agent-mod] {config.Name} 休眠");
                 }
             }
-        }
-
-        private async Task RunAgentSession(AgentConfig config, string prompt)
-        {
-            if (_ccbWs == null || !_ccbWs.IsReady) { Log.Warning($"[agent-mod] {config.Name} CCB 未就绪"); return; }
-            if (_mcp == null) return;
-
-            var tcs = new TaskCompletionSource<bool>();
-
-            void OnSessionResult(string subtype, string? _) { Log.Message($"[agent-mod] {config.Name} 结束: {subtype}"); tcs.TrySetResult(true); }
-            async void OnSessionToolUse(string toolId, string toolName, JsonElement? input)
-            {
-                await ToolDispatcher.HandleAsync(_ccbWs, _mcp!, toolId, toolName, input,
-                    msg => Log.Message($"[agent-mod] {msg}"));
-            }
-
-            _ccbWs.OnResult += OnSessionResult;
-            _ccbWs.OnToolUse += OnSessionToolUse;
-            try
-            {
-                await _ccbWs.SendChat(prompt);
-                var timeout = Task.Delay(config.Name == "combat" ? 300000 : 120000);
-                await Task.WhenAny(tcs.Task, timeout);
-            }
-            finally
-            {
-                _ccbWs.OnResult -= OnSessionResult;
-                _ccbWs.OnToolUse -= OnSessionToolUse;
-            }
-
-            try { MemoryManager.Append(config.Name, new MemoryEntry { Day = AgentOrchestrator.GameDay, Insight = $"Load={Scheduler.LoadScore}({Scheduler.Mode})", Type = "session" }); } catch (Exception ex) { Log.Warning($"[agent-mod] 记忆写入失败: {ex.Message}"); }
-        }
-
-        private static SchedulerInput ParseToSchedulerInput(string text)
-        {
-            var input = new SchedulerInput { CurrentTick = Environment.TickCount };
-            foreach (var line in text.Split('\n'))
-            {
-                var t = line.Trim();
-                if (t.Contains("殖民者") && t.Contains("|")) { int.TryParse(t.Split('|')[1].Trim(), out input.ColonistCount); }
-                else if (t.Contains("食物") && t.Contains("天")) { float.TryParse(t.Split('|')[1].Trim().Replace("天", ""), out var f); input.FoodDays = f; }
-                else if (t.Contains("敌人")) { int.TryParse(t.Split('|')[1].Trim(), out input.EnemyCount); }
-            }
-            return input;
         }
 
         public override void ExposeData() { base.ExposeData(); }

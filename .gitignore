@@ -4,3 +4,4 @@ obj/
 .idea/
 *.pdb
 *.user
+publish/
