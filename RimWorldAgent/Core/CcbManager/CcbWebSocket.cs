@@ -22,7 +22,7 @@ namespace RimWorldAgent.Core.CcbManager
         private TaskCompletionSource<bool>? _helloOk;
         private DateTime _lastPong = DateTime.MinValue;
         private const int PingIntervalMs = 30000;
-        private const int PongTimeoutMs = 60000;
+        private const int PongTimeoutMs = 20000;
         private DateTime _lastPing = DateTime.MinValue;
         private System.Threading.Timer? _heartbeatTimer;
 
