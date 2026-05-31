@@ -150,11 +150,8 @@ namespace RimWorldAgent
             listing.Gap(12f);
             listing.Label("<b>CC Companion 依赖</b>");
 
-            var modRoot = System.IO.Path.GetDirectoryName(typeof(RimWorldAgentMod).Assembly.Location) ?? ".";
-            var ccDir1 = System.IO.Path.GetFullPath(System.IO.Path.Combine(modRoot, "..", "..", "cc-companion"));
-            var ccDir2 = System.IO.Path.GetFullPath(System.IO.Path.Combine(modRoot, "..", "..", "..", "..", "cc-companion"));
-            var ccDir = System.IO.Directory.Exists(ccDir1) ? ccDir1 :
-                        System.IO.Directory.Exists(ccDir2) ? ccDir2 : ccDir1;
+            var asmDir = System.IO.Path.GetDirectoryName(typeof(RimWorldAgentMod).Assembly.Location) ?? ".";
+            var ccDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(asmDir, "cc-companion"));
 
             var installed = CompanionInstaller.IsInstalled(ccDir);
             var installing = CompanionInstaller.IsInstalling;

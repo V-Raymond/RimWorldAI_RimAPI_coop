@@ -98,6 +98,9 @@ namespace RimWorldAgent
 
         public override void DoWindowContents(Rect inRect)
         {
+            // 消费 WS 后台线程积累的 UI 事件（必须在 UI 线程执行）
+            ChatDisplayState.DrainEvents();
+
             if (Event.current.type == EventType.KeyDown
                 && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter))
             {

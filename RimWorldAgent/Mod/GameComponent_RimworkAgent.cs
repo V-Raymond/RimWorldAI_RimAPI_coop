@@ -67,10 +67,12 @@ namespace RimWorldAgent
                 MaxThinkingTokens = settings?.MaxThinkingTokens ?? 0,
             };
 
+            // log 回调可能从后台线程（CCB stdout/stderr、WS ReceiveLoop、MCP HTTP）触发，
+            // 直接写 Verse.Log 会和 EditWindow_Log 的渲染迭代器冲突 → Collection was modified
             _engine = new AgentEngine(cfg, dbStore, gameState,
-                logInfo: msg => Log.Message($"[agent-core] {msg}"),
-                logError: msg => Log.Error($"[agent-core] {msg}"),
-                logDebug: msg => Log.Message($"[agent-core] {msg}"));
+                logInfo: msg => LongEventHandler.ExecuteWhenFinished(() => Log.Message($"[agent-core] {msg}")),
+                logError: msg => LongEventHandler.ExecuteWhenFinished(() => Log.Error($"[agent-core] {msg}")),
+                logDebug: msg => LongEventHandler.ExecuteWhenFinished(() => Log.Message($"[agent-core] {msg}")));
 
             await _engine.InitAsync();
             _dbStore = dbStore;
@@ -86,28 +88,37 @@ namespace RimWorldAgent
             Log.Message("[agent-mod] Agent Runtime 初始化完成");
         }
 
-        /// <summary>将 CcbWebSocket 事件桥接到 ChatDisplayState（游戏内 UI）</summary>
+        /// <summary>
+        /// 将 CcbWebSocket 事件桥接到 ChatDisplayState。
+        /// CcbWebSocket.ReceiveLoop 在后台线程运行，通过 EnqueueUiEvent 入队，
+        /// 由 Dialog_AiChat.DoWindowContents 在 UI 线程消费。
+        /// </summary>
         private static void WireChatDisplayUi(CcbWebSocket ws)
         {
-            ws.OnAssistantText += text => ChatDisplayState.OnAssistantText(text);
+            ws.OnAssistantText += text =>
+                ChatDisplayState.EnqueueUiEvent(() =>
+                    ChatDisplayState.OnAssistantText(text));
 
             ws.OnToolUse += (toolId, toolName, input) =>
-                ChatDisplayState.AddToolCall(toolId, toolName, input);
+                ChatDisplayState.EnqueueUiEvent(() =>
+                    ChatDisplayState.AddToolCall(toolId, toolName, input));
 
             ws.OnResult += (subtype, _) =>
-            {
-                ChatDisplayState.FinishStreaming();
-                // 更新预算百分比供 UI 横幅使用
-                if (TokenUsageTracker.TotalAllTokens > 0)
+                ChatDisplayState.EnqueueUiEvent(() =>
                 {
-                    var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
-                    ChatDisplayState.CurrentBudgetStatus = limit > 0
-                        ? TokenUsageTracker.CheckBudget(limit)
-                        : BudgetStatus.Ok;
-                }
-            };
+                    ChatDisplayState.FinishStreaming();
+                    if (TokenUsageTracker.TotalAllTokens > 0)
+                    {
+                        var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
+                        ChatDisplayState.CurrentBudgetStatus = limit > 0
+                            ? TokenUsageTracker.CheckBudget(limit)
+                            : BudgetStatus.Ok;
+                    }
+                });
 
-            ws.OnAborted += () => ChatDisplayState.MarkLastAborted();
+            ws.OnAborted += () =>
+                ChatDisplayState.EnqueueUiEvent(() =>
+                    ChatDisplayState.MarkLastAborted());
         }
 
         public override void GameComponentUpdate()

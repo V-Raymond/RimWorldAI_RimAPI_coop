@@ -124,7 +124,10 @@ namespace RimWorldAgent.Core.AgentRuntime
                 if (_cfg.CcbAutoInstall && !CompanionInstaller.IsInstalled(_cfg.CcbDir))
                 {
                     _logInfo("[AgentEngine] CCB: npm install...");
-                    await CompanionInstaller.InstallAsync(_cfg.CcbDir);
+                    var ok = await CompanionInstaller.InstallAsync(_cfg.CcbDir);
+                    _logInfo(ok
+                        ? $"[AgentEngine] CCB: npm install 完成"
+                        : $"[AgentEngine] CCB: npm install 失败 — {CompanionInstaller.InstallStatus}");
                 }
 
                 _ccb = new Ccb(_cfg.CcbDir, _cfg.ProjectPath, _cfg.CcbPort,

@@ -50,6 +50,33 @@ namespace RimWorldAgent
         private static readonly List<ToolCallInfo> _toolCalls = new();
         private static readonly object _lock = new();
 
+        // 事件队列：CcbWebSocket 后台线程入队，Dialog_AiChat UI 线程消费
+        private static readonly Queue<Action> _pendingEvents = new();
+        private static readonly object _eventLock = new();
+
+        /// <summary>WS 后台线程安全入队，由 Dialog_AiChat 在 UI 线程 DrainEvents</summary>
+        public static void EnqueueUiEvent(Action action)
+        {
+            lock (_eventLock) { _pendingEvents.Enqueue(action); }
+        }
+
+        /// <summary>UI 线程调用，消费所有积压事件</summary>
+        public static void DrainEvents()
+        {
+            List<Action> batch;
+            lock (_eventLock)
+            {
+                if (_pendingEvents.Count == 0) return;
+                batch = new List<Action>(_pendingEvents);
+                _pendingEvents.Clear();
+            }
+            foreach (var act in batch)
+            {
+                try { act(); }
+                catch (Exception ex) { Log.Warning($"[ChatDisplayState] 事件处理异常: {ex.Message}"); }
+            }
+        }
+
         public static List<ChatEntry> Snapshot { get { lock (_lock) return _entries.ToList(); } }
         public static List<ToolCallInfo> ToolCallsSnapshot { get { lock (_lock) return _toolCalls.ToList(); } }
 

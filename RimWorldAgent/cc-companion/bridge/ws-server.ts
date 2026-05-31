@@ -77,7 +77,8 @@ export function createWSServer(
         const msg = JSON.parse(data.toString()) as WsMessage;
         handleMessage(ws, msg);
       } catch {
-        console.warn(`[cc-companion] 无效 JSON: ${data.toString().substring(0, 200)}`);
+        // console.log 而非 console.warn：stderr → C# ErrorDataReceived 误报为错误
+        console.log(`[cc-companion] 无效 JSON: ${data.toString().substring(0, 200)}`);
         sendJson(ws, { type: 'error', error: 'invalid json' });
       }
     });
