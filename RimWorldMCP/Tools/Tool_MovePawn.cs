@@ -75,9 +75,19 @@ namespace RimWorldMCP.Tools
                     if (!pawn.health.capacities.CapableOf(PawnCapacityDefOf.Moving))
                         return ToolResult.Error($"{pawn.Name.ToStringShort} 无法移动。");
 
+                    // 未征召 → 自动征召，确保移动命令立即执行（到达后不解征）
+                    bool wasDrafted = pawn.Drafted;
+                    if (!wasDrafted && pawn.drafter != null)
+                        pawn.drafter.Drafted = true;
+
                     Job job = JobMaker.MakeJob(JobDefOf.Goto, dest);
                     if (!pawn.jobs.TryTakeOrderedJob(job, JobTag.Misc, capQueue))
+                    {
+                        // Job 分配失败时，如果之前自动征召了，恢复原状态
+                        if (!wasDrafted && pawn.Drafted)
+                            pawn.drafter.Drafted = false;
                         return ToolResult.Error($"{pawn.Name.ToStringShort} 无法执行移动指令，可能被阻塞。");
+                    }
                     string queueLabel = capQueue ? "（已加入队列）" : "";
 
                     return ToolResult.Success($"{pawn.Name.ToStringShort} 已开始移动到 ({posX}, {posY})。{queueLabel}");

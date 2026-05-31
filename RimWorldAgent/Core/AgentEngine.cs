@@ -42,6 +42,7 @@ namespace RimWorldAgent.Core.AgentRuntime
         private McpClient? _mcp;
         private ContextBuilder? _ctx;
         private bool _initialized;
+        private int _lastDialogCheckTick;
         private SimpleMspServer.McpServiceHost? _agentHost;
 
         public CcbWebSocket? CcbWs => _ccbWs;
@@ -66,6 +67,12 @@ namespace RimWorldAgent.Core.AgentRuntime
             // Session 目录
             Directory.CreateDirectory(_cfg.SessionDir);
             TaskBoard.SessionDir = _cfg.SessionDir;
+
+            // Data 层 — 本地文件持久化
+            TodoStore.TickProvider = () => AgentOrchestrator.GameTick;
+            MemoryStore.Instance = new InMemoryMemoryStore();
+            TodoStore.Instance = new InMemoryTodoStore();
+            TokenStore.Instance = new LocalFileTokenStore();
 
             // Skills
             var skillsDir = _cfg.SkillsDir ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Skills");
@@ -136,9 +143,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 _logInfo("[AgentEngine] 游戏已连接");
             }
 
-            // SSE 事件订阅
+            // 游戏事件订阅（通过 MCP notification 通道拦截，随 SDK 连接自动启动）
             AgentLoop.WireEvents(_mcp);
-            _mcp.StartSse();
 
             GamePaceController.PlanSpeed = _cfg.PlanSpeed;
             _ctx = new ContextBuilder(_mcp);
@@ -200,60 +206,109 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
         }
 
-        /// <summary>Agent 调度：Scheduler 检查 → RunAgent → switch_agent 递归链</summary>
+        /// <summary>Agent 调度：Scheduler 检查 → RunAgent。原地切换由 ToolDispatcher 处理</summary>
         public async Task TickAsync()
-        {
-            if (_mcp == null || _ctx == null) return;
-
-            var currentTick = AgentOrchestrator.GameTick;
-
-            if (AgentOrchestrator.IsSleeping("overseer"))
-            {
-                if (Scheduler.ShouldWake("overseer", AgentConfigs.Overseer.IntervalGameHours, currentTick)
-                    || AgentOrchestrator.IsNewDay("overseer"))
-                    await RunAgentWithSwitchSupport(AgentConfigs.Overseer);
-            }
-
-            if (_ccbWs?.IsReady == true
-                && AgentOrchestrator.IsSleeping("combat")
-                && AgentOrchestrator.HasPendingEvents("combat"))
-            {
-                await RunAgentWithSwitchSupport(AgentConfigs.Combat);
-            }
-
-            // Economy — 定时唤醒（每 4 游戏小时）
-            if (AgentOrchestrator.IsSleeping("economy")
-                && Scheduler.ShouldWake("economy", AgentConfigs.Economy.IntervalGameHours, currentTick))
-                await RunAgentWithSwitchSupport(AgentConfigs.Economy);
-
-            // Medic — 每天 + L3 健康事件
-            if (AgentOrchestrator.IsSleeping("medic")
-                && (AgentOrchestrator.IsNewDay("medic")
-                    || AgentOrchestrator.HasPendingEvents("medic")))
-                await RunAgentWithSwitchSupport(AgentConfigs.Medic);
-        }
-
-        private async Task RunAgentWithSwitchSupport(AgentConfig config)
         {
             if (_mcp == null || _ctx == null || _ccbWs == null || !_ccbWs.IsReady) return;
 
+            var currentTick = AgentOrchestrator.GameTick;
+
+            // 定时弹框扫描（每 2500 tick ≈ 60s 游戏时间，约 5 个主循环周期）
+            if (currentTick - _lastDialogCheckTick >= 2500)
+            {
+                _lastDialogCheckTick = currentTick;
+                try
+                {
+                    var dialogsResult = await _mcp.CallTool("get_open_dialogs");
+                    if (!dialogsResult.Contains("没有打开") && !dialogsResult.Contains("没有可交互"))
+                    {
+                        AgentOrchestrator.DispatchEvent(new ColonyEvent
+                        {
+                            Category = "Combat",
+                            Severity = "Critical",
+                            Summary = $"弹框提示 — 请调用 get_open_dialogs 查看并处理",
+                            Tick = currentTick
+                        }, EventRoute.Combat);
+                        _logInfo($"[AgentEngine] 检测到弹框，已发送 Critical 事件");
+                    }
+                }
+                catch (Exception ex) { _logInfo($"[AgentEngine] 弹框检测失败: {ex.Message}"); }
+            }
+
+            if (AgentOrchestrator.IsSleeping("overseer")
+                && (Scheduler.ShouldWake("overseer", AgentConfigs.Overseer.IntervalGameHours, currentTick)
+                    || AgentOrchestrator.IsNewDay("overseer")))
+            {
+                await RunAgent(AgentConfigs.Overseer);
+                if (AgentOrchestrator.PendingSessionStart)
+                {
+                    await RunPendingAgent();
+                    return;
+                }
+            }
+
+            if (AgentOrchestrator.IsSleeping("combat")
+                && AgentOrchestrator.HasPendingEvents("combat"))
+            {
+                await RunAgent(AgentConfigs.Combat);
+                if (AgentOrchestrator.PendingSessionStart)
+                {
+                    await RunPendingAgent();
+                    return;
+                }
+            }
+
+            if (AgentOrchestrator.IsSleeping("economy")
+                && Scheduler.ShouldWake("economy", AgentConfigs.Economy.IntervalGameHours, currentTick))
+            {
+                await RunAgent(AgentConfigs.Economy);
+                if (AgentOrchestrator.PendingSessionStart)
+                {
+                    await RunPendingAgent();
+                    return;
+                }
+            }
+
+            if (AgentOrchestrator.IsSleeping("medic")
+                && (AgentOrchestrator.IsNewDay("medic")
+                    || AgentOrchestrator.HasPendingEvents("medic")))
+            {
+                await RunAgent(AgentConfigs.Medic);
+                if (AgentOrchestrator.PendingSessionStart)
+                {
+                    await RunPendingAgent();
+                    return;
+                }
+            }
+        }
+
+        private async Task RunPendingAgent()
+        {
+            AgentOrchestrator.PendingSessionStart = false;
+            var active = AgentOrchestrator.ActiveAgent;
+            if (active == null) return;
+            var cfg = AgentConfigs.Get(active);
+            if (cfg != null)
+                await RunAgent(cfg);
+        }
+
+        private async Task RunAgent(AgentConfig config)
+        {
+            AgentOrchestrator.PendingSessionStart = false;
             AgentOrchestrator.NextAgentRequest = null;
             AgentLoop.SwitchCount = 0;
+            GamePaceController.ShouldSkipResume = null;
             AgentOrchestrator.BeginAgent(config.Name);
             _logInfo($"[AgentEngine] 唤醒 {config.Name} (Load={Scheduler.LoadScore})");
 
-            if (_ccbWs.IsReady)
-                await _ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.AgentRoleDisplay });
+            await _ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.AgentRoleDisplay });
 
             var prompt = await _ctx.BuildAsync(config);
             await AgentLoop.RunSessionAsync(config, prompt, _mcp, _ccbWs);
 
-            // 原地切换后 ActiveAgent 可能已变（如 overseer → combat），用实际活跃 Agent 收尾
             var endedAgent = AgentOrchestrator.ActiveAgent ?? config.Name;
             AgentOrchestrator.EndAgent(endedAgent);
             _logInfo($"[AgentEngine] {endedAgent} 休眠");
-
-            // 原地切换由 ToolDispatcher 在工具返回后立即执行（SwitchAgentInSession），不需要在此递归
         }
 
         public void Dispose()

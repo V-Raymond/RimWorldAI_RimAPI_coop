@@ -164,13 +164,37 @@ namespace RimWorldMCP.Tools
 
                     var result = await tool.ExecuteAsync(args);
 
-                    // 追加 suffix（一次性：追加后立即清空）
-                    var suffix = ToolResultSuffix;
-                    if (!string.IsNullOrEmpty(suffix))
+                    // 追加 suffix（一次性，但 set_tool_result_suffix 自身不消费）
+                    if (name != "set_tool_result_suffix")
                     {
-                        ToolResultSuffix = "";
-                        result.Text = result.Text + "\n\n" + suffix;
+                        var suffix = ToolResultSuffix;
+                        if (!string.IsNullOrEmpty(suffix))
+                        {
+                            ToolResultSuffix = "";
+                            result.Text = result.Text + "\n\n" + suffix;
+                        }
                     }
+
+                    // 追加游戏速度
+                    try
+                    {
+                        var tm = Find.TickManager;
+                        if (tm != null)
+                        {
+                            var label = tm.CurTimeSpeed switch
+                            {
+                                TimeSpeed.Paused => "已暂停",
+                                TimeSpeed.Normal => "1 倍速",
+                                TimeSpeed.Fast => "2 倍速",
+                                TimeSpeed.Superfast => "3 倍速",
+                                TimeSpeed.Ultrafast => "最快",
+                                _ => ""
+                            };
+                            if (!string.IsNullOrEmpty(label))
+                                result.Text = result.Text + $"\n\n[游戏速度: {label}]";
+                        }
+                    }
+                    catch (Exception ex) { Log.Warning($"[ToolRegistry] 获取游戏速度失败: {ex.Message}"); }
 
                     // 工具结束时补推剩余通知
                     try

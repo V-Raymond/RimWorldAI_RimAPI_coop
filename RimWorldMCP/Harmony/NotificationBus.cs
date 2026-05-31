@@ -78,7 +78,18 @@ namespace RimWorldMCP.Harmony
                     EventLevel.Warning => "Warning",
                     _ => "Info"
                 },
-                Summary = $"{n.DangerLabel}: {n.Label ?? n.Text ?? ""}",
+                Summary = n.Type switch
+                {
+                    NotificationType.Letter => !string.IsNullOrEmpty(n.Text) && n.Text != n.Label
+                        ? $"{n.DangerLabel} | {n.Label} — {n.Text}"
+                        : $"{n.DangerLabel} | {n.Label}",
+                    NotificationType.Message => $"{n.DangerLabel} | {n.Text}",
+                    NotificationType.AlertStart => n.Culprits is { Count: > 0 }
+                        ? $"[{n.PriorityLabel}] {n.Label} ({string.Join("、", n.Culprits.Take(3))})"
+                        : $"[{n.PriorityLabel}] {n.Label}",
+                    NotificationType.AlertEnd => $"解除: {n.Label}",
+                    _ => n.Label ?? n.Text ?? ""
+                },
                 Tick = n.Tick
             };
 
