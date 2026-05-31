@@ -87,16 +87,19 @@ namespace RimWorldAgent.Core.AgentRuntime
             // 世界状态 → 更新 Scheduler
             mcp.OnWorldState += input =>
             {
-                CoreLog.Info($"[event] WorldState: colonists={input.ColonistCount} idle={input.IdleCount} enemies={input.EnemyCount} downed={input.DownedEnemyCount} food={input.FoodDays:F1}d med={input.MedicineCount}");
                 Scheduler.Tick(input);
             };
 
-            // 游戏事件 → Agent 侧智能路由（不再依赖 MCP 侧 Route 字段）
+            // 游戏事件 → 路由 + 双工通知
             mcp.OnGameEvent += evt =>
             {
-                CoreLog.Info($"[event] {evt.Method}: {evt.Payload as string ?? $"{evt.Category}/{evt.Severity}: {evt.Summary}"}");
                 var route = AgentOrchestrator.RouteEvent(evt.Category, evt.Severity);
+                CoreLog.Info($"[event] {evt.Method}: {evt.Category}/{evt.Severity} → {route}: {evt.Summary}");
                 AgentOrchestrator.DispatchEvent(evt, route);
+
+                // 双工：运行时 suffix 注入，休眠时直接发送
+                if (evt.Severity is "Critical" or "Warning")
+                    _ = AgentOrchestrator.NotisAgent($"[{evt.Severity}/{evt.Category}] {evt.Summary}");
             };
         }
 

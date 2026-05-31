@@ -327,13 +327,6 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 | `set_bed_owner_type` | 设置床位类型（医疗/囚犯/殖民者） | `Building_Bed.Medical`, `CompAssignableToPawn` (入队) |
 | `set_temp_control` | 设置温度控制设备 | `CompTempControl` (入队) |
 
-### TODO 系统 (3)
-| Tool | 说明 | 数据源 |
-|------|------|--------|
-| `todo_add` | 添加待办任务 | `TodoManager` |
-| `todo_delete` | 删除待办任务 | `TodoManager` |
-| `todo_query` | 查询待办任务 | `TodoManager` |
-
 ### 基地模板 (2)
 | Tool | 说明 | 数据源/操作 |
 |------|------|------------|
@@ -360,12 +353,6 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 | Tool | 说明 | 数据源 |
 |------|------|--------|
 | `set_tool_result_suffix` | 设置工具结果后缀（一次性），下一次工具调用结果末尾追加后自动清空 | `ToolRegistry.ToolResultSuffix` |
-
-### Skill (2)
-| Tool | 说明 | 数据源 |
-|------|------|--------|
-| `get_skills` | 列出可用领域知识 | `SkillRegistry.GetAll()` |
-| `active_skill` | 激活获取 Skill 内容 | `SkillRegistry.Get(name)` |
 
 ### 可达性检测
 

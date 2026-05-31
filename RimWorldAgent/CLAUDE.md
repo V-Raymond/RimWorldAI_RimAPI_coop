@@ -18,9 +18,10 @@ RimWorldAgent/
 │   ├── About/About.xml
 │   └── Skills/*.md (13个)
 ├── Core/                      ← 共享逻辑
-│   ├── AgentRuntime/          Scheduler / TaskBoard / Memory / AgentOrchestrator / AgentConfig / ContextBuilder / InternalTools / ToolDispatcher
+│   ├── AgentRuntime/          Scheduler / TaskBoard / AgentOrchestrator / AgentConfig / ContextBuilder / InternalTools / ToolDispatcher
+│   ├── Data/                  ★ 数据抽象层 — ITodoStore / ITokenStore / IMemoryStore + InMemory/LocalFile 实现
 │   ├── Mcp/                   MCP 客户端 + Agent MCP Server (:9878)
-│   └── CcbManager/            CCB 子进程管理 + CcbWebSocket
+│   └── CcbManager/            CCB 子进程管理 + CcbWebSocket + TokenUsageTracker
 ├── Exe/                       ← EXE Loader
 │   └── Program.cs             入口：find CCB → spawn → connect MCP → Agent Main Loop
 ├── Mod/                       ← MOD Loader (RimWorld 加载)
@@ -86,6 +87,24 @@ Agent 通过 MCP 工具设置一次性 suffix，MCP Server 在下一次工具结
 
 内部工具通过 `AgentOrchestrator.SessionMcp` 转发到 MCP Server。MCP 侧用 `volatile string ToolResultSuffix` 存储，`ExecuteAsync` 中追加后立即清空。
 
+### Internal Tools（Agent 端，通过 AgentMCP :9878 暴露给 CCB）
+
+这些工具不在 RimWorldMCP 模块中，由 Agent 内部实现：
+
+| Tool | 说明 | 实现 |
+|------|------|------|
+| `get_skills` | 列出可用领域技能 | `InternalToolRegistry` → `SkillRegistry` |
+| `active_skill` | 激活获取 Skill 内容 | `InternalToolRegistry` → `SkillRegistry` |
+| `todo_add` | 添加待办任务 | `InternalToolRegistry` → `TodoStore` |
+| `todo_delete` | 删除待办任务 | `InternalToolRegistry` → `TodoStore` |
+| `todo_query` | 查询待办任务 | `InternalToolRegistry` → `TodoStore` |
+| `todo_set_status` | 设置任务状态 | `InternalToolRegistry` → `TodoStore` |
+| `enter_plan` / `enter_act` | Plan/Act 阶段切换 | `InternalToolRegistry` → `GamePaceController` |
+| `switch_agent` | 切换活跃 Agent | `InternalToolRegistry` → `AgentOrchestrator` |
+| `advise_agent` | 给其他 Agent 提建议 | `InternalToolRegistry` → `AgentOrchestrator` |
+| `set_tool_result_suffix` | 设置一次性工具结果后缀 | `InternalToolRegistry` → MCP Server |
+| `exit_combat_role` | 退出战斗角色 | `InternalToolRegistry` → `AgentOrchestrator` |
+
 ### Agent 切换与建议
 
 - `switch_agent(role)` — 切换当前活跃 Agent，当前会话结束，目标 Agent 唤醒
@@ -108,7 +127,7 @@ dotnet build RimWorldAgent/RimWorldAgent.csproj  # 单独 Agent
 - 引用 SimpleMspServer（MCP 协议共享库）
 - 游戏数据通过 MCP HTTP 获取
 - 游戏操作通过 MCP Tool 调用
-- TaskBoard/Memory 持久化为 JSON
+- 数据持久化通过 Core.Data/ 抽象层（TaskBoard/Token/Memory/Todo），InMemory 和 LocalFile 两种实现
 
 ### 异常处理规范
 

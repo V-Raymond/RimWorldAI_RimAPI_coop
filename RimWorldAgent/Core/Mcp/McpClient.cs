@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
@@ -14,13 +15,11 @@ using RimWorldAgent.Core.AgentRuntime;
 
 namespace RimWorldAgent.Core.Mcp
 {
-    /// <summary>MCP 客户端 — SDK HttpClientTransport + 自定义 SSE 游戏事件订阅</summary>
+    /// <summary>MCP 客户端 — SDK HttpClientTransport + Notification 拦截游戏事件</summary>
     public class McpClient : IDisposable
     {
         private ModelContextProtocol.Client.McpClient? _sdkClient;
         private readonly string _baseUrl;
-        private readonly HttpClient _http;
-        private CancellationTokenSource? _sseCts;
         private Task<ModelContextProtocol.Client.McpClient>? _connectTask;
 
         public event Action<ColonyEvent>? OnGameEvent;
@@ -34,7 +33,6 @@ namespace RimWorldAgent.Core.Mcp
             if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 baseUrl = "http://" + baseUrl;
             _baseUrl = baseUrl.TrimEnd('/');
-            _http = new HttpClient { BaseAddress = new Uri(_baseUrl + "/"), Timeout = TimeSpan.FromSeconds(120) };
             _connectTask = ConnectAsync();
             CoreLog.Info($"[McpClient] 正在连接 MCP: {_baseUrl}");
         }
@@ -46,7 +44,8 @@ namespace RimWorldAgent.Core.Mcp
                 Endpoint = new Uri(_baseUrl),
             }, NullLoggerFactory.Instance);
 
-            var client = await ModelContextProtocol.Client.McpClient.CreateAsync(transport, loggerFactory: NullLoggerFactory.Instance);
+            var interceptTransport = new EventInterceptTransport(transport, HandleNotification);
+            var client = await ModelContextProtocol.Client.McpClient.CreateAsync(interceptTransport, loggerFactory: NullLoggerFactory.Instance);
             _sdkClient = client;
             return client;
         }
@@ -89,106 +88,140 @@ namespace RimWorldAgent.Core.Mcp
             return sb.ToString().TrimEnd();
         }
 
-        /// <summary>同步封装供旧代码使用</summary>
         public async Task<string> CallTool(string name, Dictionary<string, JsonElement>? args = null)
             => await CallToolAsync(name, args);
 
-        // ===== SSE 游戏事件订阅（自定义 /events 端点） =====
-
-        public void StartSse()
+        public void Dispose()
         {
-            _sseCts?.Cancel();
-            _sseCts = new CancellationTokenSource();
-            _ = Task.Run(() => SseLoop(_sseCts.Token));
+            if (_sdkClient is IDisposable d) d.Dispose();
         }
 
-        public void StopSse() => _sseCts?.Cancel();
+        // ===== Notification 拦截 =====
 
-        private async Task SseLoop(CancellationToken ct)
+        private static readonly JsonSerializerOptions _readableJson = new()
         {
-            var url = $"{_baseUrl}/events";
-            while (!ct.IsCancellationRequested)
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        private void HandleNotification(JsonRpcNotification notif)
+        {
+            try
             {
-                try
+                switch (notif.Method)
                 {
-                    using var req = new HttpRequestMessage(HttpMethod.Get, new Uri(url));
-                    req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-                    using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-                    using var stream = await resp.Content.ReadAsStreamAsync();
-                    using var reader = new StreamReader(stream);
+                    case "game/tick":
+                        var tick = notif.Params?["tick"]?.GetValue<int>() ?? 0;
+                        if (tick > 0) OnGameTick?.Invoke(tick);
+                        break;
 
-                    string lastMethod = "";
-                    while (!reader.EndOfStream && !ct.IsCancellationRequested)
-                    {
-                        var line = await reader.ReadLineAsync();
-                        if (string.IsNullOrEmpty(line)) continue;
-
-                        // 跟踪 SSE event 行（method 名称）
-                        if (line.StartsWith("event:"))
+                    case "game/world-state":
+                        OnWorldState?.Invoke(new SchedulerInput
                         {
-                            lastMethod = line.Substring(6).Trim();
-                            continue;
-                        }
-                        if (!line.StartsWith("data:")) continue;
+                            ColonistCount = notif.Params?["colonists"]?.GetValue<int>() ?? 0,
+                            IdleCount = notif.Params?["idle"]?.GetValue<int>() ?? 0,
+                            EnemyCount = notif.Params?["enemies"]?.GetValue<int>() ?? 0,
+                            DownedEnemyCount = notif.Params?["downed"]?.GetValue<int>() ?? 0,
+                            FoodDays = notif.Params?["foodDays"]?.GetValue<float>() ?? 0f,
+                            MedicineCount = notif.Params?["medicine"]?.GetValue<int>() ?? 0,
+                            CurrentTick = AgentOrchestrator.GameTick
+                        });
+                        break;
 
-                        var json = line.Substring(5).Trim();
-                        try
+                    default:
+                        // game/notification, game/deterioration, game/trapped
+                        OnGameEvent?.Invoke(new ColonyEvent
                         {
-                            var doc = JsonDocument.Parse(json);
-                            var root = doc.RootElement;
-
-                            if (lastMethod == "game/tick")
-                            {
-                                var gameTick = root.TryGetProperty("tick", out var tk) && tk.TryGetInt32(out var tv) ? tv : 0;
-                                if (gameTick > 0) OnGameTick?.Invoke(gameTick);
-                            }
-                            else if (lastMethod == "game/world-state")
-                            {
-                                OnWorldState?.Invoke(new SchedulerInput
-                                {
-                                    ColonistCount = root.TryGetProperty("colonists", out var co) ? co.GetInt32() : 0,
-                                    IdleCount = root.TryGetProperty("idle", out var id) ? id.GetInt32() : 0,
-                                    EnemyCount = root.TryGetProperty("enemies", out var en) ? en.GetInt32() : 0,
-                                    DownedEnemyCount = root.TryGetProperty("downed", out var dn) ? dn.GetInt32() : 0,
-                                    FoodDays = root.TryGetProperty("foodDays", out var fd) ? fd.GetSingle() : 0f,
-                                    MedicineCount = root.TryGetProperty("medicine", out var md) ? md.GetInt32() : 0,
-                                    CurrentTick = AgentOrchestrator.GameTick
-                                });
-                            }
-                            else
-                            {
-                                // game/notification, game/deterioration 等
-                                OnGameEvent?.Invoke(new ColonyEvent
-                                {
-                                    Category = root.TryGetProperty("Category", out var c) ? c.GetString() ?? "" : "",
-                                    Severity = root.TryGetProperty("Severity", out var s) ? s.GetString() ?? "" : "",
-                                    Summary = root.TryGetProperty("Summary", out var sm) ? sm.GetString() ?? "" : "",
-                                    Tick = root.TryGetProperty("Tick", out var t) && t.TryGetInt32(out var ti) ? ti : 0,
-                                    Method = lastMethod,
-                                    Payload = json
-                                });
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            CoreLog.Warn($"[McpClient] SSE 消息解析失败 ({lastMethod}): {ex.Message}");
-                        }
-                    }
+                            Category = notif.Params?["Category"]?.GetValue<string>() ?? "",
+                            Severity = notif.Params?["Severity"]?.GetValue<string>() ?? "",
+                            Summary = notif.Params?["Summary"]?.GetValue<string>() ?? "",
+                            Tick = notif.Params?["Tick"]?.GetValue<int>() ?? 0,
+                            Method = notif.Method,
+                            Payload = notif.Params?.ToJsonString(_readableJson)
+                        });
+                        break;
                 }
-                catch (Exception ex) when (!ct.IsCancellationRequested)
-                {
-                    var detail = UnwrapException(ex);
-                    CoreLog.Error($"[McpClient] SSE 断开 ({_baseUrl}/events): {detail}，3s 后重连");
-                    try { await Task.Delay(3000, ct); } catch (OperationCanceledException) { break; }
-                }
+            }
+            catch (Exception ex)
+            {
+                CoreLog.Warn($"[McpClient] 通知解析失败 ({notif.Method}): {ex.Message}");
             }
         }
 
-        public void Dispose()
+        // ===== Transport Wrapper =====
+
+        /// <summary>包装 HttpClientTransport，拦截 MCP notification 消息</summary>
+        private sealed class EventInterceptTransport : IClientTransport
         {
-            StopSse();
-            if (_sdkClient is IDisposable d) d.Dispose();
-            _http.Dispose();
+            private readonly IClientTransport _inner;
+            private readonly Action<JsonRpcNotification> _onNotification;
+
+            public string Name => _inner.Name;
+
+            public EventInterceptTransport(IClientTransport inner, Action<JsonRpcNotification> onNotification)
+            {
+                _inner = inner;
+                _onNotification = onNotification;
+            }
+
+            public async Task<ITransport> ConnectAsync(CancellationToken cancellationToken)
+            {
+                var innerTransport = await _inner.ConnectAsync(cancellationToken);
+                return new InterceptingTransport(innerTransport, _onNotification);
+            }
+        }
+
+        /// <summary>从 inner MessageReader 转发消息，拦截 notification 触发事件</summary>
+        private sealed class InterceptingTransport : ITransport, IAsyncDisposable
+        {
+            private readonly ITransport _inner;
+            private readonly Channel<JsonRpcMessage> _channel;
+            private readonly CancellationTokenSource _cts;
+
+            public string? SessionId => _inner.SessionId;
+            public ChannelReader<JsonRpcMessage> MessageReader => _channel.Reader;
+
+            public InterceptingTransport(ITransport inner, Action<JsonRpcNotification> onNotification)
+            {
+                _inner = inner;
+                _channel = Channel.CreateUnbounded<JsonRpcMessage>();
+                _cts = new CancellationTokenSource();
+                _ = ForwardAsync(onNotification, _cts.Token);
+            }
+
+            private async Task ForwardAsync(Action<JsonRpcNotification> onNotification, CancellationToken ct)
+            {
+                var reader = _inner.MessageReader;
+                var writer = _channel.Writer;
+                try
+                {
+                    while (await reader.WaitToReadAsync(ct))
+                    {
+                        while (reader.TryRead(out var msg))
+                        {
+                            if (msg is JsonRpcNotification notif)
+                                onNotification(notif);
+                            await writer.WriteAsync(msg, ct);
+                        }
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { CoreLog.Warn($"[McpClient] 消息转发异常: {ex.Message}"); }
+                finally { writer.TryComplete(); }
+            }
+
+            public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default)
+                => _inner.SendMessageAsync(message, cancellationToken);
+
+            public async ValueTask DisposeAsync()
+            {
+                _cts.Cancel();
+                _channel.Writer.TryComplete();
+                if (_inner is IAsyncDisposable ad)
+                    await ad.DisposeAsync();
+                else if (_inner is IDisposable d)
+                    d.Dispose();
+                _cts.Dispose();
+            }
         }
 
         private static string UnwrapException(Exception ex)

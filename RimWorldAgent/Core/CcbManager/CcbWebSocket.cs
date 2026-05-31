@@ -317,15 +317,9 @@ namespace RimWorldAgent.Core.CcbManager
                     && delta.TryGetProperty("text", out var txt))
                     OnAssistantText?.Invoke(txt.GetString() ?? "");
             }
-            else if (eventType == "content_block_start" && evt.TryGetProperty("content_block", out var cb))
-            {
-                if (cb.TryGetProperty("type", out var cbt) && cbt.GetString() == "tool_use"
-                    && evt.TryGetProperty("index", out var idx) && cb.TryGetProperty("id", out var tid))
-                {
-                    OnToolUse?.Invoke(tid.GetString() ?? "", cb.GetProperty("name").GetString() ?? "",
-                        cb.TryGetProperty("input", out var inp) ? inp : (JsonElement?)null);
-                }
-            }
+            // content_block_start 的 tool_use 仅通知 name/id，不做执行
+            // 实际执行由 ParseAssistantMessage 中完整的 assistant 消息驱动
+            // 否则 streaming 模式下同一 tool 会执行两次
         }
 
         // ========== 心跳 ==========

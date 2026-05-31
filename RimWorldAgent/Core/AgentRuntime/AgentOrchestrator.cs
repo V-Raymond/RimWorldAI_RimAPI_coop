@@ -54,6 +54,9 @@ namespace RimWorldAgent.Core.AgentRuntime
         /// <summary>switch_agent 请求的目标 Agent，主循环会话结束后检查并切换</summary>
         public static string? NextAgentRequest { get; set; }
 
+        /// <summary>PauseAndSwitchRole 后置 true，主循环 TickAsync 检测到此标记立即启动新 Agent 会话</summary>
+        public static bool PendingSessionStart { get; set; }
+
         /// <summary>当前游戏阶段（Plan/Act/None）</summary>
         public static GamePhase CurrentPhase { get; private set; }
 
@@ -104,7 +107,13 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
             else
             {
-                CoreLog.Warn("[NotisAgent] CcbWs 不可用，通知丢失");
+                // 双路不通 → 入队 Overseer，下次唤醒时注入 Prompt
+                AgentEvents["overseer"].Enqueue(new ColonyEvent
+                {
+                    Category = "Notification", Severity = "Warning",
+                    Summary = notification, Method = "notis-fallback"
+                });
+                CoreLog.Warn($"[NotisAgent] CcbWs 不可用，已入队 Overseer ({notification.Length} 字符)");
             }
         }
 
@@ -160,31 +169,23 @@ namespace RimWorldAgent.Core.AgentRuntime
             OnStatusChanged?.Invoke(AgentRoleDisplay);
         }
 
-        /// <summary>原地切换 Agent（不销毁 session）。返回新 Agent 的完整上下文。</summary>
-        public static async Task<string?> SwitchAgentInSession(string targetRole)
+        /// <summary>暂停游戏并切换活跃角色（不构建新 prompt）。由 ToolDispatcher 在 switch_agent 后调用。
+        /// 新会话由主循环 TickAsync 检测 PendingSessionStart 后通过 RunAgent 启动。</summary>
+        public static async Task PauseAndSwitchRole(string targetRole)
         {
             var currentAgent = ActiveAgent;
-            if (currentAgent == null || SessionMcp == null) return null;
-            if (currentAgent == targetRole) return null;
+            if (currentAgent == null || SessionMcp == null) return;
 
-            var config = AgentConfigs.Get(targetRole);
-            if (config == null) return null;
-
-            // 系统自动暂停 + 进入 PLAN，新 Agent 无需手动 enter_plan
+            GamePaceController.ShouldSkipResume = () => true;
             EnterPlanPhase();
             if (PaceController != null)
-                await PaceController.PauseForPlanning(SessionMcp!);
+                await PaceController.PauseForPlanning(SessionMcp);
 
-            // 切换角色状态
             EndAgent(currentAgent);
             BeginAgent(targetRole);
+            PendingSessionStart = true;
 
-            // 构建新 Agent 上下文
-            var ctx = new ContextBuilder(SessionMcp);
-            var prompt = await ctx.BuildAsync(config);
-
-            CoreLog.Info($"[SwitchAgent] {currentAgent} → {targetRole} ({prompt.Length} 字符)");
-            return prompt;
+            CoreLog.Info($"[SwitchAgent] {currentAgent} → {targetRole}，游戏已暂停，等待主循环启动新会话");
         }
 
         public static bool HasPendingEvents(string agentName)

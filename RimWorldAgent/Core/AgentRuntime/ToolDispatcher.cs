@@ -30,18 +30,16 @@ namespace RimWorldAgent.Core.AgentRuntime
                     log($"工具完成: {toolName} 用时 {sw.ElapsedMilliseconds}ms");
                     await ccbWs.SendToolResult(toolId, result);
 
-                    // 原地切换：工具正常返回后，构造新 Prompt 模拟用户发送
+                    // 原地切换：暂停游戏 + 切换角色，但不立即发送新 prompt。
+                    // 新 prompt 由主循环 TickAsync 检测 PendingSessionStart 后通过 RunAgent 发送。
                     if (!string.IsNullOrEmpty(AgentOrchestrator.NextAgentRequest))
                     {
                         var target = AgentOrchestrator.NextAgentRequest;
                         AgentOrchestrator.NextAgentRequest = null;
-                        var context = await AgentOrchestrator.SwitchAgentInSession(target);
-                        if (context != null)
-                        {
-                            await ccbWs.SendChat(context);
-                            Interlocked.Increment(ref AgentLoop.SwitchCount);
-                            log($"原地切换 → {target}，Prompt 已发送 ({context.Length} 字符), SwitchCount={AgentLoop.SwitchCount}");
-                        }
+                        await AgentOrchestrator.PauseAndSwitchRole(target);
+                        Interlocked.Increment(ref AgentLoop.SwitchCount);
+                        InternalToolRegistry.RequestExit();
+                        log($"原地切换 → {target}，游戏已暂停，等待主循环启动新会话 (SwitchCount={AgentLoop.SwitchCount})");
                     }
                 }
                 catch (Exception ex)

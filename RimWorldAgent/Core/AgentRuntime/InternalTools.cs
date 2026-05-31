@@ -26,6 +26,9 @@ namespace RimWorldAgent.Core.AgentRuntime
         /// <summary>内部工具请求退出会话时触发（exit=true）</summary>
         public static event Action? OnExitRequested;
 
+        /// <summary>ToolDispatcher 在 switch_agent 后调用，请求当前会话退出</summary>
+        public static void RequestExit() => OnExitRequested?.Invoke();
+
         private readonly Dictionary<string, IInternalTool> _tools = new();
 
         string IToolProvider.ProviderName => "AgentInternal";

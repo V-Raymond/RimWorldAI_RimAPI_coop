@@ -86,13 +86,26 @@ namespace RimWorldMCP.Tools
                     // 逃跑检测
                     bool isFleeing = IsFleeing(pawn);
 
+                    // 征召检测
+                    bool isDrafted = pawn.drafter?.Drafted == true;
+
+                    // 被敌人瞄准检测
+                    bool isTargeted = IsTargetedByEnemy(pawn);
+
                     // 精神态
                     string mentalStateStr = GetMentalState(pawn);
 
                     // 最近日志
                     string recentLogs = GetRecentLogs(pawn);
 
-                    string statusTag = isFleeing ? " **逃跑中!**" : (pawn.Downed ? " **倒地**" : "");
+                    var tags = new List<string>();
+                    if (isFleeing) tags.Add("逃跑中!");
+                    if (pawn.Downed) tags.Add("倒地");
+                    if (isDrafted) tags.Add("征召中");
+                    if (isTargeted) tags.Add("被敌人瞄准");
+                    if (!pawn.Awake())
+                        tags.Add("睡眠中");
+                    string statusTag = tags.Count > 0 ? " **" + string.Join(" ", tags) + "**" : "";
 
                     sb.AppendLine();
                     sb.AppendLine($"### {name} (ID:{pawn.thingIDNumber}){statusTag}");
@@ -327,6 +340,22 @@ namespace RimWorldMCP.Tools
             if (lord?.CurLordToil is LordToil_PanicFlee)
                 return true;
             return false;
+        }
+
+        private static bool IsTargetedByEnemy(Pawn pawn)
+        {
+            try
+            {
+                var map = pawn.Map;
+                if (map == null) return false;
+                foreach (var p in map.mapPawns.AllPawnsSpawned)
+                {
+                    if (p.Faction == null || !p.Faction.HostileTo(Faction.OfPlayer)) continue;
+                    if (p.CurJob?.targetA.Thing == pawn) return true;
+                }
+                return false;
+            }
+            catch (Exception ex) { Log.Warning($"[GetColonists] IsTargetedByEnemy 读取失败: {ex.Message}"); return false; }
         }
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;
     }
