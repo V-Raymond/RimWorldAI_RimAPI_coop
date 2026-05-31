@@ -55,8 +55,8 @@ namespace RimWorldAgent.Core.CcbManager
             {
                 mcpServers = new
                 {
-                    rimworld = new { type = "http", url = $"http://localhost:{_mcpPort}/mcp" },
-                    agent = new { type = "http", url = $"http://localhost:{_agentMcpPort}/mcp" }
+                    agent = new { type = "http", url = $"http://localhost:{_agentMcpPort}/mcp" },
+                    rimworld = new { type = "http", url = $"http://localhost:{_mcpPort}/mcp" }
                 }
             };
             var mcpJson = System.Text.Json.JsonSerializer.Serialize(mcpConfig, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
