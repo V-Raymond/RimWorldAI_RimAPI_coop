@@ -66,7 +66,7 @@ namespace RimWorldAgent.Core.AgentRuntime
 
             // Session 目录
             Directory.CreateDirectory(_cfg.SessionDir);
-            TaskBoard.SessionDir = _cfg.SessionDir;
+            SessionStore.SessionDir = _cfg.SessionDir;
 
             // Data 层 — 本地文件持久化
             TodoStore.TickProvider = () => AgentOrchestrator.GameTick;
@@ -206,14 +206,14 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
         }
 
-        /// <summary>Agent 调度：Scheduler 检查 → RunAgent。原地切换由 ToolDispatcher 处理</summary>
+        /// <summary>单 Agent 调度循环</summary>
         public async Task TickAsync()
         {
             if (_mcp == null || _ctx == null || _ccbWs == null || !_ccbWs.IsReady) return;
 
             var currentTick = AgentOrchestrator.GameTick;
 
-            // 定时弹框扫描（每 2500 tick ≈ 60s 游戏时间，约 5 个主循环周期）
+            // 定时弹框扫描（每 2500 tick ≈ 60s 游戏时间）
             if (currentTick - _lastDialogCheckTick >= 2500)
             {
                 _lastDialogCheckTick = currentTick;
@@ -222,93 +222,58 @@ namespace RimWorldAgent.Core.AgentRuntime
                     var dialogsResult = await _mcp.CallTool("get_open_dialogs");
                     if (!dialogsResult.Contains("没有打开") && !dialogsResult.Contains("没有可交互"))
                     {
-                        AgentOrchestrator.DispatchEvent(new ColonyEvent
-                        {
-                            Category = "Combat",
-                            Severity = "Critical",
-                            Summary = $"弹框提示 — 请调用 get_open_dialogs 查看并处理",
-                            Tick = currentTick
-                        }, EventRoute.Combat);
-                        _logInfo($"[AgentEngine] 检测到弹框，已发送 Critical 事件");
+                        AgentOrchestrator.RequestInterrupt("弹框提示 — 请调用 get_open_dialogs 查看并处理");
+                        _logInfo("[AgentEngine] 检测到弹框，已发送中断");
                     }
                 }
                 catch (Exception ex) { _logInfo($"[AgentEngine] 弹框检测失败: {ex.Message}"); }
             }
 
-            if (AgentOrchestrator.IsSleeping("overseer")
-                && (Scheduler.ShouldWake("overseer", AgentConfigs.Overseer.IntervalGameHours, currentTick)
-                    || AgentOrchestrator.IsNewDay("overseer")))
+            // 优先级 1: 中断请求 + Agent 运行中 → 等待 AgentLoop 中 SendAbort 处理
+            if (AgentOrchestrator.InterruptRequested && AgentOrchestrator.IsRunning)
+                return;
+
+            // 优先级 2: 中断请求 + Agent 空闲 → 立即启动新会话
+            if (AgentOrchestrator.InterruptRequested && !AgentOrchestrator.IsRunning)
             {
-                await RunAgent(AgentConfigs.Overseer);
-                if (AgentOrchestrator.PendingSessionStart)
-                {
-                    await RunPendingAgent();
-                    return;
-                }
+                AgentOrchestrator.InterruptRequested = false;
+                await RunAgent(isInterrupted: true);
+                return;
             }
 
-            if (AgentOrchestrator.IsSleeping("combat")
-                && AgentOrchestrator.HasPendingEvents("combat"))
+            // 优先级 3: 每日 PLAN 模式
+            if (!AgentOrchestrator.IsRunning && AgentOrchestrator.ShouldMorningReport())
             {
-                await RunAgent(AgentConfigs.Combat);
-                if (AgentOrchestrator.PendingSessionStart)
-                {
-                    await RunPendingAgent();
-                    return;
-                }
+                AgentOrchestrator.EnterPlanPhase();
+                if (AgentOrchestrator.PaceController == null)
+                    AgentOrchestrator.PaceController = new GamePaceController();
+                await AgentOrchestrator.PaceController.PauseForPlanning(_mcp);
+                await RunAgent(isPlan: true);
+                return;
             }
 
-            if (AgentOrchestrator.IsSleeping("economy")
-                && Scheduler.ShouldWake("economy", AgentConfigs.Economy.IntervalGameHours, currentTick))
+            // 优先级 4: 定期 ACT 检查
+            if (!AgentOrchestrator.IsRunning
+                && Scheduler.ShouldWake(AgentConfigs.Default.IntervalGameHours, currentTick))
             {
-                await RunAgent(AgentConfigs.Economy);
-                if (AgentOrchestrator.PendingSessionStart)
-                {
-                    await RunPendingAgent();
-                    return;
-                }
-            }
-
-            if (AgentOrchestrator.IsSleeping("medic")
-                && (AgentOrchestrator.IsNewDay("medic")
-                    || AgentOrchestrator.HasPendingEvents("medic")))
-            {
-                await RunAgent(AgentConfigs.Medic);
-                if (AgentOrchestrator.PendingSessionStart)
-                {
-                    await RunPendingAgent();
-                    return;
-                }
+                await RunAgent(isPlan: false);
+                return;
             }
         }
 
-        private async Task RunPendingAgent()
+        private async Task RunAgent(bool isPlan = false, bool isInterrupted = false)
         {
-            AgentOrchestrator.PendingSessionStart = false;
-            var active = AgentOrchestrator.ActiveAgent;
-            if (active == null) return;
-            var cfg = AgentConfigs.Get(active);
-            if (cfg != null)
-                await RunAgent(cfg);
-        }
-
-        private async Task RunAgent(AgentConfig config)
-        {
-            AgentOrchestrator.PendingSessionStart = false;
-            AgentOrchestrator.NextAgentRequest = null;
-            AgentLoop.SwitchCount = 0;
             GamePaceController.ShouldSkipResume = null;
-            AgentOrchestrator.BeginAgent(config.Name);
-            _logInfo($"[AgentEngine] 唤醒 {config.Name} (Load={Scheduler.LoadScore})");
+            AgentOrchestrator.BeginSession();
+            _logInfo($"[AgentEngine] 唤醒 commander (Load={Scheduler.LoadScore}, Plan={isPlan}, Interrupted={isInterrupted})");
 
-            await _ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.AgentRoleDisplay });
+            await _ccbWs!.SendEvent("agent.status", new { text = AgentOrchestrator.StatusText });
 
-            var prompt = await _ctx.BuildAsync(config);
-            await AgentLoop.RunSessionAsync(config, prompt, _mcp, _ccbWs);
+            var prompt = await _ctx!.BuildAsync(isInterrupted: isInterrupted);
+            await AgentLoop.RunSessionAsync(prompt, _mcp!, _ccbWs);
 
-            var endedAgent = AgentOrchestrator.ActiveAgent ?? config.Name;
-            AgentOrchestrator.EndAgent(endedAgent);
-            _logInfo($"[AgentEngine] {endedAgent} 休眠");
+            AgentOrchestrator.EndSession();
+            _logInfo("[AgentEngine] commander 休眠");
         }
 
         public void Dispose()

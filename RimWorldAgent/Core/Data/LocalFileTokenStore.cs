@@ -200,7 +200,7 @@ namespace RimWorldAgent.Core.Data
 
         private static string GetDefaultPath(string fileName)
         {
-            var dir = TaskBoard.SessionDir;
+            var dir = SessionStore.SessionDir;
             if (!string.IsNullOrEmpty(dir)) return Path.Combine(dir, fileName);
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RimWorldMCP", fileName);
         }

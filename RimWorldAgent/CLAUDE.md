@@ -1,6 +1,6 @@
 # RimWorldAgent
 
-AI Colony Runtime — 多 Agent 自主管理殖民地。通过 MCP 协议连接 RimWorldMCP，集成 Claude Agent SDK。
+AI Colony Runtime — AI 自主管理殖民地。通过 MCP 协议连接 RimWorldMCP，集成 Claude Agent SDK。
 
 **相关项目**:
 - MCP Server: `../RimWorldMCP/`（游戏 Mod DLL，99+ Tool）
@@ -18,7 +18,7 @@ RimWorldAgent/
 │   ├── About/About.xml
 │   └── Skills/*.md (13个)
 ├── Core/                      ← 共享逻辑
-│   ├── AgentRuntime/          Scheduler / TaskBoard / AgentOrchestrator / AgentConfig / ContextBuilder / InternalTools / ToolDispatcher
+│   ├── AgentRuntime/          Scheduler / AgentOrchestrator / AgentConfig / ContextBuilder / InternalTools / ToolDispatcher
 │   ├── Data/                  ★ 数据抽象层 — ITodoStore / ITokenStore / IMemoryStore + InMemory/LocalFile 实现
 │   ├── Mcp/                   MCP 客户端 + Agent MCP Server (:9878)
 │   └── CcbManager/            CCB 子进程管理 + CcbWebSocket + TokenUsageTracker
@@ -61,12 +61,11 @@ RimWorldAgent (EXE/MOD)             RimWorldMCP (Mod DLL)
 
 ### Agent 架构总览
 
-```
-Overseer (策略, 每天/12h) → 全局摘要分析 → 发布 TaskBoard 目标
-Economy (生产+军械, 每 2-6h) → 建造/制造/装备分配
-Combat (战斗, L3 事件驱动) → 暂停→分析→部署→接敌→收尾→退出
-Medic (医疗, 每天+战斗后) → 治疗/手术/仿生体
-```
+单 Agent (Commander) 全权负责殖民地所有事务：策略规划、生产建造、战斗指挥、医疗管理。
+
+调度优先级：中断请求 → 每日 PLAN → 定期 ACT 检查 (每 4 游戏小时)
+
+所有通知（MCP 事件、弹框检测）均触发立即中断，通过 `SendAbort()` 打断当前 CCB 会话。每轮工具结果末尾追加当前模式+速度状态。
 
 ### Plan/Act 阶段
 
@@ -100,16 +99,14 @@ Agent 通过 MCP 工具设置一次性 suffix，MCP Server 在下一次工具结
 | `todo_query` | 查询待办任务 | `InternalToolRegistry` → `TodoStore` |
 | `todo_set_status` | 设置任务状态 | `InternalToolRegistry` → `TodoStore` |
 | `enter_plan` / `enter_act` | Plan/Act 阶段切换 | `InternalToolRegistry` → `GamePaceController` |
-| `switch_agent` | 切换活跃 Agent | `InternalToolRegistry` → `AgentOrchestrator` |
-| `advise_agent` | 给其他 Agent 提建议 | `InternalToolRegistry` → `AgentOrchestrator` |
 | `set_tool_result_suffix` | 设置一次性工具结果后缀 | `InternalToolRegistry` → MCP Server |
-| `exit_combat_role` | 退出战斗角色 | `InternalToolRegistry` → `AgentOrchestrator` |
 
-### Agent 切换与建议
+### 中断机制
 
-- `switch_agent(role)` — 切换当前活跃 Agent，当前会话结束，目标 Agent 唤醒
-- `advise_agent(role, advice)` — 给其他 Agent 提供建议，切换时自动附加在 Prompt 中
-- 事件路由在 Agent 侧（`AgentOrchestrator.RouteEvent()`），MCP 只推送 Category+Severity
+所有 MCP 事件和弹框检测均触发立即中断：
+- `AgentOrchestrator.RequestInterrupt(summary)` — 标记中断 + 存储摘要 + `SendAbort()` 打断当前 CCB 会话
+- 中断后新会话 prompt 顶部注入通知内容 + "如有必要可以暂停游戏"
+- `NotisAgent()` 作为保底双工通知（suffix 注入或 Direct WS）
 
 ## 开发
 
@@ -127,7 +124,7 @@ dotnet build RimWorldAgent/RimWorldAgent.csproj  # 单独 Agent
 - 引用 SimpleMspServer（MCP 协议共享库）
 - 游戏数据通过 MCP HTTP 获取
 - 游戏操作通过 MCP Tool 调用
-- 数据持久化通过 Core.Data/ 抽象层（TaskBoard/Token/Memory/Todo），InMemory 和 LocalFile 两种实现
+- 数据持久化通过 Core.Data/ 抽象层（Token/Memory/Todo），InMemory 和 LocalFile 两种实现
 
 ### 异常处理规范
 
@@ -226,10 +223,9 @@ Agent 通过 `McpClient.SubscribeEvents(agentId)` 订阅 `GET /sse?agent=oversee
 {"type":"event","category":"Combat","severity":"Critical","message":"大型突袭来袭"}
 ```
 
-事件路由规则：
-- **L3 Critical** → Combat Agent 立即唤醒
-- **L2/L1** → 加入对应 Agent 队列，下次唤醒时处理
-- **L0** → 丢弃
+事件路由规则（已简化）：
+- 所有事件均触发中断，不再区分优先级
+- 弹框检测由 AgentEngine.TickAsync() 每 2500 tick 扫描
 
 MCP 侧的事件分级表和 Harmony 拦截逻辑详见 `../RimWorldMCP/CLAUDE.md`。
 

@@ -26,18 +26,12 @@ namespace RimWorldAgent.Core.AgentRuntime
         /// <summary>内部工具请求退出会话时触发（exit=true）</summary>
         public static event Action? OnExitRequested;
 
-        /// <summary>ToolDispatcher 在 switch_agent 后调用，请求当前会话退出</summary>
-        public static void RequestExit() => OnExitRequested?.Invoke();
-
         private readonly Dictionary<string, IInternalTool> _tools = new();
 
         string IToolProvider.ProviderName => "AgentInternal";
 
         private InternalToolRegistry()
         {
-            Register(new Tool_ExitCombatRole());
-            Register(new Tool_SwitchAgent());
-            Register(new Tool_AdviseAgent());
             Register(new Tool_EnterPlan());
             Register(new Tool_EnterAct());
             Register(new Tool_TodoAdd());
@@ -65,7 +59,7 @@ namespace RimWorldAgent.Core.AgentRuntime
         {
             if (_tools.TryGetValue(name, out var tool))
             {
-                CoreLog.Info($"[TOOL_CALL] InternalTool {name} args={args}");
+                CoreLog.Info($"[TOOL_CALL] InternalTool {name} args={FormatArgsForLog(args)}");
                 var (result, exit) = await tool.ExecuteAsync(args);
                 if (exit) OnExitRequested?.Invoke();
                 return (result, exit);
@@ -99,7 +93,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
             catch (Exception ex)
             {
-                CoreLog.Error($"[TOOL_ERROR] InternalTool {name} 异常: {ex.GetType().Name}: {ex.Message}");
+                CoreLog.Error($"InternalTool {name} 异常: {ex.GetType().Name}: {ex.Message}");
                 return new ToolCallResult
                 {
                     IsError = true,
@@ -110,5 +104,18 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         List<ResourceDefinition> IToolProvider.GetResources() => new List<ResourceDefinition>();
         string? IToolProvider.ReadResource(string uri) => null;
+
+        private static string FormatArgsForLog(JsonElement? args)
+        {
+            if (args == null) return "null";
+            try
+            {
+                return JsonSerializer.Serialize(args.Value, new JsonSerializerOptions
+                {
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+            }
+            catch { return args.Value.GetRawText(); }
+        }
     }
 }

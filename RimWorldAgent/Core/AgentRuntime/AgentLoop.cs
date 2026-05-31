@@ -5,16 +5,12 @@ using System.Threading.Tasks;
 using RimWorldAgent.Core.CcbManager;
 using RimWorldAgent.Core.Data;
 using RimWorldAgent.Core.Mcp;
-using RimWorldAgent;
 
 namespace RimWorldAgent.Core.AgentRuntime
 {
     /// <summary>EXE / MOD 共享的 Agent 主循环逻辑</summary>
     public static class AgentLoop
     {
-        /// <summary>原地 switch_agent 计数。RunSessionAsync 用此跳过旧 Agent 的 result，只在新 Agent 的 result 到来时结束 session。</summary>
-        public static int SwitchCount;
-
         /// <summary>从 get_world_summary Markdown 文本解析 SchedulerInput</summary>
         public static SchedulerInput ParseSchedulerInput(string text)
         {
@@ -43,20 +39,19 @@ namespace RimWorldAgent.Core.AgentRuntime
             _budgetLimit = ccbWs.BudgetLimit;
             AgentOrchestrator.CcbWs = ccbWs;
 
-            // 连接后立即推送当前状态
             if (ccbWs.IsReady)
             {
-                _ = ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.AgentRoleDisplay });
+                _ = ccbWs.SendEvent("agent.status", new { text = AgentOrchestrator.StatusText });
                 PushBudgetUpdate(ccbWs);
             }
         }
 
         static AgentLoop()
         {
-            AgentOrchestrator.OnStatusChanged += role =>
+            AgentOrchestrator.OnStatusChanged += status =>
             {
                 if (_statusWs?.IsReady == true)
-                    _ = _statusWs.SendEvent("agent.status", new { text = role });
+                    _ = _statusWs.SendEvent("agent.status", new { text = status });
             };
 
             TokenUsageTracker.OnUsageRecorded += () =>
@@ -78,33 +73,27 @@ namespace RimWorldAgent.Core.AgentRuntime
             });
         }
 
-        /// <summary>MCP 游戏事件 → AgentOrchestrator 路由</summary>
+        /// <summary>MCP 游戏事件 → 所有通知都触发中断</summary>
         public static void WireEvents(McpClient mcp)
         {
             // tick 事件 → 更新游戏 tick
             mcp.OnGameTick += tick => AgentOrchestrator.GameTick = tick;
 
             // 世界状态 → 更新 Scheduler
-            mcp.OnWorldState += input =>
-            {
-                Scheduler.Tick(input);
-            };
+            mcp.OnWorldState += input => Scheduler.Tick(input);
 
-            // 游戏事件 → 路由 + 双工通知
+            // 游戏事件 → 所有事件触发中断 + 双工通知
             mcp.OnGameEvent += evt =>
             {
-                var route = AgentOrchestrator.RouteEvent(evt.Category, evt.Severity);
-                CoreLog.Info($"[event] {evt.Method}: {evt.Category}/{evt.Severity} → {route}: {evt.Summary}");
-                AgentOrchestrator.DispatchEvent(evt, route);
-
-                // 双工：运行时 suffix 注入，休眠时直接发送
-                if (evt.Severity is "Critical" or "Warning")
-                    _ = AgentOrchestrator.NotisAgent($"[{evt.Severity}/{evt.Category}] {evt.Summary}");
+                CoreLog.Info($"[event] {evt.Method}: {evt.Category}/{evt.Severity}: {evt.Summary}");
+                var summary = $"[{evt.Severity}/{evt.Category}] {evt.Summary}";
+                AgentOrchestrator.RequestInterrupt(summary);
+                _ = AgentOrchestrator.NotisAgent(summary);
             };
         }
 
-        /// <summary>执行一次 Agent 回合：发送 prompt → Tool Loop → 写 Memory</summary>
-        public static async Task RunSessionAsync(AgentConfig config, string prompt, McpClient mcp, CcbWebSocket ccbWs)
+        /// <summary>执行一次 Agent 会话：发送 prompt → Tool Loop → 写 Memory</summary>
+        public static async Task RunSessionAsync(string prompt, McpClient mcp, CcbWebSocket ccbWs)
         {
             var paceController = new GamePaceController();
             AgentOrchestrator.PaceController = paceController;
@@ -113,19 +102,16 @@ namespace RimWorldAgent.Core.AgentRuntime
             var tcs = new TaskCompletionSource<bool>();
             var pendingTools = 0;
             var resultReceived = false;
-            var lastSwitchCount = Volatile.Read(ref SwitchCount);
 
             void OnResult(string subtype, string? _)
             {
-                // 原地切换后：跳过旧 Agent 的 result，等待新 Agent 的 result
-                var currentSw = Volatile.Read(ref SwitchCount);
-                if (currentSw != lastSwitchCount)
+                if (AgentOrchestrator.InterruptRequested)
                 {
-                    lastSwitchCount = currentSw;
-                    CoreLog.Info($"[{AgentOrchestrator.ActiveAgent ?? config.Name}] 跳过旧 result ({subtype}), SwitchCount={currentSw}");
+                    CoreLog.Info("[AgentLoop] 检测到中断请求，结束会话");
+                    tcs.TrySetResult(true);
                     return;
                 }
-                CoreLog.Info($"[{config.Name}] 回合结束: {subtype} (pendingTools={Volatile.Read(ref pendingTools)})");
+                CoreLog.Info($"[commander] 回合结束: {subtype} (pendingTools={Volatile.Read(ref pendingTools)})");
                 if (Volatile.Read(ref pendingTools) == 0)
                     tcs.TrySetResult(true);
                 else
@@ -138,11 +124,11 @@ namespace RimWorldAgent.Core.AgentRuntime
                 try
                 {
                     await ToolDispatcher.HandleAsync(ccbWs, mcp, toolId, toolName, input,
-                        msg => CoreLog.Info($"[{config.Name}] {msg}"));
+                        msg => CoreLog.Info($"[commander] {msg}"));
                 }
                 catch (Exception ex)
                 {
-                    CoreLog.Error($"[{config.Name}] Tool 执行异常: {ex.Message}");
+                    CoreLog.Error($"[commander] Tool 执行异常: {ex.Message}");
                 }
                 finally
                 {
@@ -153,22 +139,29 @@ namespace RimWorldAgent.Core.AgentRuntime
 
             void OnExit()
             {
-                CoreLog.Info($"[{config.Name}] 内部工具请求退出会话");
+                CoreLog.Info("[commander] 内部工具请求退出会话");
+                tcs.TrySetResult(true);
+            }
+
+            void OnAborted()
+            {
+                CoreLog.Info("[AgentLoop] Companion 确认中断，结束会话");
                 tcs.TrySetResult(true);
             }
 
             InternalToolRegistry.OnExitRequested += OnExit;
             ccbWs.OnResult += OnResult;
             ccbWs.OnToolUse += OnToolUse;
+            ccbWs.OnAborted += OnAborted;
             try
             {
                 await ccbWs.SendChat(prompt);
-                var timeoutMs = config.Name == "combat" ? 300000 : 120000;
-                var timeout = Task.Delay(timeoutMs);
+                var timeout = Task.Delay(120000);
                 await Task.WhenAny(tcs.Task, timeout);
             }
             finally
             {
+                ccbWs.OnAborted -= OnAborted;
                 InternalToolRegistry.OnExitRequested -= OnExit;
                 ccbWs.OnResult -= OnResult;
                 ccbWs.OnToolUse -= OnToolUse;
@@ -183,9 +176,7 @@ namespace RimWorldAgent.Core.AgentRuntime
 
             try
             {
-                // 原地切换后 ActiveAgent 可能已变，用实际活跃 Agent 记录
-                var effectiveName = AgentOrchestrator.ActiveAgent ?? config.Name;
-                MemoryManager.Append(effectiveName, new MemoryEntry
+                MemoryManager.Append("commander", new MemoryEntry
                 {
                     Day = AgentOrchestrator.GameDay,
                     Insight = $"Load={Scheduler.LoadScore}({Scheduler.Mode})",
@@ -194,7 +185,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
             catch (Exception ex)
             {
-                CoreLog.Warn($"[{config.Name}] 记忆写入失败: {ex.Message}");
+                CoreLog.Warn($"[commander] 记忆写入失败: {ex.Message}");
             }
         }
 

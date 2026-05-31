@@ -13,21 +13,25 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
             type = "object",
             properties = new
             {
-                reason = new { type = "string", description = "执行原因（可选，日志用）" }
-            }
+                speed = new { type = "string", description = "游戏速度: paused, normal, fast, superfast, ultrafast" }
+            },
+            required = new[] { "speed" }
         });
 
         public async Task<(string result, bool exit)> ExecuteAsync(JsonElement? args)
         {
-            var reason = args?.TryGetProperty("reason", out var reasonEl) == true ? reasonEl.GetString() ?? "" : "";
+            var speed = "superfast";
+            if (args?.TryGetProperty("speed", out var speedEl) == true)
+                speed = speedEl.GetString() ?? "superfast";
+
             AgentOrchestrator.EnterActPhase();
             var pace = AgentOrchestrator.PaceController;
             var mcp = AgentOrchestrator.SessionMcp;
             if (pace == null || mcp == null)
                 return ($"进入 Act 阶段失败: {(pace == null ? "GamePaceController" : "McpClient")} 不可用，Agent 会话可能已结束", false);
 
-            await pace.ResumeForAction(mcp);
-            return ($"已进入 Act 阶段，游戏已恢复。{reason}", false);
+            await pace.ResumeForAction(mcp, speed);
+            return ($"已进入 Act 阶段，游戏速度: {speed}。", false);
         }
     }
 }

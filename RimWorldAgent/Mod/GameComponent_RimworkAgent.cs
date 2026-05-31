@@ -66,7 +66,6 @@ namespace RimWorldAgent
 
             EventForwarder.SetCcbSocket(_engine.CcbWs);
             EventForwarder.SendGameConnected();
-            GamePaceController.ShouldSkipResume = () => EventForwarder.DangerPaused;
 
             _lastTick = 0;
             Log.Message("[agent-mod] Agent Runtime 初始化完成");

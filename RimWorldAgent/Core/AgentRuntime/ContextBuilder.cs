@@ -1,9 +1,9 @@
-﻿using System.Text;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace RimWorldAgent.Core.AgentRuntime
 {
-    /// <summary>为每个 Agent 构建 Prompt。固定段落顺序保证 Prompt Cache 命中。</summary>
+    /// <summary>为 Agent 构建 Prompt。固定段落顺序保证 Prompt Cache 命中。</summary>
     public class ContextBuilder
     {
         private readonly Mcp.McpClient _mcp;
@@ -11,52 +11,42 @@ namespace RimWorldAgent.Core.AgentRuntime
         public ContextBuilder(Mcp.McpClient mcp) { _mcp = mcp; }
 
         /// <summary>构建 Agent 完整 Prompt。</summary>
-        public async Task<string> BuildAsync(AgentConfig config)
+        public async Task<string> BuildAsync(bool isInterrupted = false)
         {
             var sb = new StringBuilder();
 
+            // 中断通知注入（如有）
+            if (isInterrupted && !string.IsNullOrEmpty(AgentOrchestrator.InterruptSummary))
+            {
+                sb.AppendLine("## 紧急通知");
+                sb.AppendLine(AgentOrchestrator.InterruptSummary);
+                sb.AppendLine("立即处理以上事项。如有必要可以暂停游戏 (toggle_pause)。");
+                sb.AppendLine();
+                AgentOrchestrator.InterruptSummary = "";
+            }
+
             // Layer 1: System Prompt (cached)
-            sb.AppendLine(config.SystemPrompt.Trim());
+            sb.AppendLine(AgentConfigs.Default.SystemPrompt.Trim());
             sb.AppendLine();
 
             // Layer 2: Memory (cached)
-            var memory = MemoryManager.GetMemoryText(config.Name);
+            var memory = MemoryManager.GetMemoryText("commander");
             if (!string.IsNullOrEmpty(memory)) { sb.AppendLine(memory); sb.AppendLine(); }
 
             // Layer 3: World Summary (via MCP get_world_summary)
             sb.AppendLine(await BuildWorldSummaryAsync());
             sb.AppendLine();
 
-            // Layer 4: Active Alerts (from AgentOrchestrator, populated by SSE event routing)
-            var alerts = AgentOrchestrator.DrainEvents(config.Name);
-            sb.AppendLine(string.IsNullOrEmpty(alerts) ? "## 最近事件\n（无）\n" : alerts);
-            sb.AppendLine();
-
-            // Layer 5: TaskBoard
-            sb.AppendLine(TaskBoard.ToMarkdown());
-            sb.AppendLine();
-
-            // Layer 5.5: Advice from other Agents
-            var advices = AgentOrchestrator.DrainAdvices(config.Name);
-            if (advices.Count > 0)
-            {
-                sb.AppendLine("## 来自其他 Agent 的建议");
-                foreach (var a in advices) sb.AppendLine($"- {a}");
-                sb.AppendLine();
-            }
-
             // Layer 6: Runtime info
             sb.AppendLine("## 运行信息");
             sb.AppendLine($"- Load: {Scheduler.LoadScore} ({Scheduler.Mode})");
             sb.AppendLine($"- Day: {AgentOrchestrator.GameDay}");
-            sb.AppendLine($"- 阶段: {AgentOrchestrator.CurrentPhase}");
-            sb.AppendLine($"- 可见工具: {config.ToolCategories.Count} 类");
 
             // Layer 7: 当前模式指引
             var phaseHint = AgentOrchestrator.CurrentPhase switch
             {
-                GamePhase.Plan => "## 当前模式\n游戏已暂停，处于 **PLAN 模式**。请直接制定计划，无需调用 `enter_plan()`。\n计划完成后调用 `enter_act()` 进入 ACT 模式执行，工作全部完成后调用 `switch_agent(\"overseer\")` 回到总督。",
-                GamePhase.Act => "## 当前模式\n处于 **ACT 模式**，请执行计划。完成后调用 `switch_agent(\"overseer\")` 回到总督。",
+                GamePhase.Plan => "## 当前模式: PLAN\n游戏已暂停。你现在可以：查询状态、管理 TODO、查看知识。\n**不能执行任何游戏操作**（建造/装备/征召/advance_tick/生产单据等）。\n计划完成后调用 enter_act() 进入 ACT 模式执行。",
+                GamePhase.Act => "## 当前模式: ACT\n游戏运行中。你现在可以执行所有操作。\n完成后如需重新规划调用 enter_plan()。",
                 _ => null
             };
             if (phaseHint != null)

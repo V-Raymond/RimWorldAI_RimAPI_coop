@@ -9,7 +9,7 @@ using Verse;
 
 namespace RimWorldAgent
 {
-    /// <summary>事件转发器 — 旧 BridgeLifecycle 核心逻辑：L3 暂停/晨报/弹框检测/空闲兜底/暂停提醒</summary>
+    /// <summary>事件转发器 — 每日晨报 / 空闲兜底 / 暂停提醒</summary>
     public static class EventForwarder
     {
         private static int _nextCCEventTick;
@@ -19,12 +19,9 @@ namespace RimWorldAgent
 
         private static int _lastSendRealMs;
         private const int IdleOverviewIntervalMs = 120000;
-        private static int _dailyReportDay = -1;
         private static int _lastColonistCount = -1;
         private static int _lastNoColonistsSendMs;
         private const int NoColonistsResendMs = 60000;
-        private static int _lastDialogCount;
-        private static string _lastDialogKey = "";
 
         private static readonly List<string> _dailyEventLog = new();
         private const int MaxDailyEventLog = 100;
@@ -34,19 +31,8 @@ namespace RimWorldAgent
         private const int PauseRemindFirstMs = 30000;
         private const int PauseRemindRepeatMs = 60000;
 
-        // L1+L2 非高危通知计数
-        private static int _pendingLevel12Count;
-
         // 依赖注入
         private static CcbWebSocket? _ccbWs;
-
-        public static bool DangerPaused { get; private set; }
-        public static string DangerSummary { get; private set; } = "";
-        public static int PendingLevel12Count => _pendingLevel12Count;
-        private static bool _dangerShouldResume;
-        private static TimeSpeed _savedSpeed;
-
-        public static void ResetPendingLevel12Count() => _pendingLevel12Count = 0;
 
         /// <summary>设置 WebSocket 客户端引用</summary>
         public static void SetCcbSocket(CcbWebSocket? ws) => _ccbWs = ws;
@@ -65,15 +51,11 @@ namespace RimWorldAgent
             var map = Find.CurrentMap;
             if (map == null) return;
 
-            AutoPauseGuard();
             var colonists = PawnsFinder.AllMaps_FreeColonistsSpawned;
             int colonistCount = colonists.Count;
             int nowMs = Environment.TickCount;
 
-            // === 第1层：紧急事件 ===
-            var settings = RimWorldAgentMod.Instance?.Settings;
-            if (settings == null) return;
-
+            // === 紧急事件检测 ===
             var tick = Find.TickManager?.TicksGame ?? 0;
             bool tickElapsed = tick >= _nextCCEventTick;
             if (tickElapsed) _nextCCEventTick = tick + CCEventCheckInterval;
@@ -104,15 +86,10 @@ namespace RimWorldAgent
                 }
                 else _lastNoColonistsSendMs = 0;
 
-                // 弹框检测
-                CheckDialogs(nowMs, map, colonistCount);
-
                 // 每日早报（6 点）
-                int day = tick / 60000;
                 int hour = GenLocalDate.HourOfDay(map);
-                if (hour == 6 && _dailyReportDay != day)
+                if (hour == 6 && AgentOrchestrator.ShouldMorningReport())
                 {
-                    _dailyReportDay = day;
                     if (Find.TickManager != null && !Find.TickManager.Paused)
                         Find.TickManager.TogglePaused();
                     var dailyText = BuildDailyBriefing(map, colonists, colonistCount);
@@ -121,7 +98,7 @@ namespace RimWorldAgent
                 }
             }
 
-            // === 第3层：空闲兜底 ===
+            // === 空闲兜底 ===
             if (_lastSendRealMs > 0
                 && unchecked((uint)(nowMs - _lastSendRealMs) >= IdleOverviewIntervalMs))
             {
@@ -129,7 +106,7 @@ namespace RimWorldAgent
                 SendCCMessage("IdleDetected", overview);
             }
 
-            // === 第4层：暂停过久提醒 ===
+            // === 暂停过久提醒 ===
             var paused = Find.TickManager?.Paused ?? false;
             if (paused)
             {
@@ -148,18 +125,6 @@ namespace RimWorldAgent
                 }
             }
             else { _pauseStartRealMs = 0; _lastPauseRemindMs = 0; }
-        }
-
-        private static void AutoPauseGuard()
-        {
-            if (!DangerPaused) return;
-            DangerPaused = false;
-            DangerSummary = "";
-            if (_dangerShouldResume && Find.TickManager != null)
-            {
-                Find.TickManager.CurTimeSpeed = _savedSpeed;
-                _dangerShouldResume = false;
-            }
         }
 
         private static void SendCCMessage(string category, string text)
@@ -257,42 +222,18 @@ namespace RimWorldAgent
             }
 
             sb.AppendLine();
-            sb.AppendLine("### 请按以下步骤执行");
-            sb.AppendLine("1. 用 `get_game_context` + `get_colonists` + `check_colony` 获取最新状态");
-            sb.AppendLine("2. 用 `add_memory` 记录关键经验教训");
-            sb.AppendLine("3. 分析当前资源缺口、威胁等级、殖民者状态");
-            sb.AppendLine("4. 确定今日优先事项，恢复游戏（`toggle_pause`）或继续操作");
+            sb.AppendLine("### 请按以下步骤执行（PLAN 模式）");
+            sb.AppendLine("游戏已暂停，你现在处于 PLAN 模式。请按以下步骤执行：");
+            sb.AppendLine();
+            sb.AppendLine("1. **全面检查**: get_game_context + get_colonists + check_colony 获取最新状态");
+            sb.AppendLine("2. **总结经验**: 回顾昨日事件，用 add_memory 记录关键经验教训");
+            sb.AppendLine("3. **评估现状**: 资源缺口、威胁等级、殖民者心情/健康、研究进度、装备水平");
+            sb.AppendLine("4. **制定计划**: 用 todo_add 逐条添加今日待办，优先解决警报问题");
+            sb.AppendLine("5. **进入执行**: 调用 enter_act() 恢复游戏，逐一执行 TODO");
+            sb.AppendLine();
+            sb.AppendLine("**PLAN 模式下不能执行任何游戏操作**（建造/装备/征召/advance_tick），只能查询和管理 TODO。");
 
             return sb.ToString().TrimEnd();
-        }
-
-        // ========== 弹框检测 ==========
-
-        private static bool IsBlockingDialog(Window w)
-            => w is FloatMenu || w is Dialog_MessageBox || w is Dialog_NodeTree
-            || w is Dialog_GiveName || w is Dialog_Confirm || w is Dialog_Slider;
-
-        private static void CheckDialogs(int nowMs, Map map, int colonistCount)
-        {
-            var ws = Find.WindowStack;
-            var blocking = new List<Window>();
-            if (ws != null)
-                for (int i = 0; i < ws.Count; i++)
-                    if (IsBlockingDialog(ws[i])) blocking.Add(ws[i]);
-
-            int count = blocking.Count;
-            string key = string.Join("|", blocking.Select(w => w.GetType().Name));
-
-            if (count > 0 && (count != _lastDialogCount || key != _lastDialogKey))
-            {
-                _lastDialogCount = count; _lastDialogKey = key;
-                int steel = GetResourceCount(map, "Steel");
-                int foodDays = CalcFoodDays(map, colonistCount);
-                SendCCMessage("AlertStart",
-                    $"## 弹框提示\n当前有 {count} 个弹框需要选择。\n使用 get_open_dialogs 查看选项，select_dialog_option 选择。\n---\n殖民者: {colonistCount}人 | 食物: {foodDays}天 | 钢{steel}");
-            }
-            else if (count == 0 && _lastDialogCount > 0)
-            { _lastDialogCount = 0; _lastDialogKey = ""; }
         }
 
         // ========== 辅助 ==========
