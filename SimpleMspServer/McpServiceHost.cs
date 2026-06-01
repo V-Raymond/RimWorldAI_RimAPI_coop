@@ -127,6 +127,11 @@ namespace SimpleMspServer
                 else if (req.HttpMethod == "GET") Write(res, "{\"status\":\"ok\",\"server\":\"RimWorldMCP\",\"transport\":\"http+sse\"}", "application/json");
                 else { res.StatusCode = 404; res.Close(); }
             }
+            catch (HttpListenerException)
+            {
+                // 客户端已断开连接，正常网络行为
+                _log.Warn($"HTTP 客户端已断开: {req.Url?.AbsolutePath}");
+            }
             catch (Exception ex)
             {
                 _log.Error($"HTTP 处理错误: {ex.GetType().Name}: {ex.Message}");
@@ -198,6 +203,7 @@ namespace SimpleMspServer
 
             res.Headers.Add("Mcp-Session-Id", sid);
             try { await session.Transport.HandleGetRequestAsync(res.OutputStream, _cts?.Token ?? CancellationToken.None); }
+            catch (HttpListenerException) { _log.Warn($"SSE 客户端断开 ({sid})"); }
             catch (Exception ex) when (ex.Message.Contains("Session resumption")) { }
             catch (Exception ex) { _log.Warn($"SSE 断开 ({sid}): {ex.Message}"); }
         }

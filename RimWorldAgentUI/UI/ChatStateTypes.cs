@@ -9,11 +9,13 @@ namespace RimWorldAgent
     public enum ChatRole { User, Assistant }
     public enum ChatState { Streaming, Done, Error }
     public enum ToolStatus { Running, Completed, Failed }
+    public enum BudgetStatus { Ok, Warning, Critical, Exceeded }
 
     public class ToolCallInfo
     {
         public string ItemId = "";
         public string Name = "";
+        public string Title = "";
         public string Meta = "";
         public ToolStatus Status;
         public DateTime StartTime = DateTime.UtcNow;
@@ -26,9 +28,11 @@ namespace RimWorldAgent
         public string Text = "";
         public string ThinkingText = "";
         public ChatState State;
+        public string RunId = "";
         public string AgentId = "";
         public string AgentType = "";
         public bool IsContext;
+        public int LastChunkLen;
         public float CachedHeight;
         public int CachedTextLen;
         public int CachedThinkingLen;
@@ -38,21 +42,43 @@ namespace RimWorldAgent
     public static class ChatDisplayState
     {
         public static event Action? OnChanged;
+        public static BudgetStatus CurrentBudgetStatus = BudgetStatus.Ok;
+        public static float CurrentBudgetPercent;
+        public static string CurrentBudgetText = "";
         public static string CurrentModel = "";
         public static string SessionId = "";
         public static string AgentStatus = "";
 
         private static readonly List<ChatEntry> _entries = new();
         private static readonly List<ToolCallInfo> _toolCalls = new();
+        private static readonly List<SdkTaskItem> _sdkTasks = new();
         private static readonly object _lock = new();
+
+        // 事件队列：BridgeClient 后台线程入队，Dialog_AiChat UI 线程消费
         private static readonly Queue<Action> _pendingEvents = new();
         private static readonly object _eventLock = new();
 
+        // 流式累积器 — REPLACE 语义
+        private static string _deltaAccum = "";
+        private static bool _deltaIsThinking;
+        private static ChatEntry? _streamingEntry;
+
+        public class SdkTaskItem
+        {
+            public string Id = "";
+            public string Subject = "";
+            public string Status = "pending";
+        }
+
+        // ===== 线程安全事件队列 =====
+
+        /// <summary>WS 后台线程安全入队，由 Dialog_AiChat 在 UI 线程 DrainEvents</summary>
         public static void EnqueueUiEvent(Action action)
         {
             lock (_eventLock) { _pendingEvents.Enqueue(action); }
         }
 
+        /// <summary>UI 线程调用，消费所有积压事件</summary>
         public static void DrainEvents()
         {
             List<Action> batch;
@@ -65,7 +91,10 @@ namespace RimWorldAgent
             foreach (var act in batch)
             {
                 try { act(); }
-                catch (Exception ex) { Log.Warning($"[ChatDisplayState] 事件处理异常: {ex.Message}"); }
+                catch (Exception ex)
+                {
+                    Log.Warning($"[ChatDisplayState] 事件处理异常: {ex.GetType().Name}: {ex.Message}");
+                }
             }
         }
 
@@ -75,30 +104,218 @@ namespace RimWorldAgent
         public static List<ToolCallInfo> ToolCallsSnapshot
         { get { lock (_lock) return _toolCalls.ToList(); } }
 
+        public static List<SdkTaskItem> SdkTasksSnapshot
+        { get { lock (_lock) return _sdkTasks.ToList(); } }
+
+        // ===== 用户消息 =====
+
+        /// <summary>用户发送消息时记录，结束上一轮 AI 流式条目</summary>
         public static void OnUserMessage(string text)
         {
             lock (_lock)
             {
-                if (_entries.Count > 0 && _entries[_entries.Count - 1].State == ChatState.Streaming)
-                    _entries[_entries.Count - 1].State = ChatState.Done;
+                FinalizeStreamingLocked();
                 _entries.Add(new ChatEntry { Role = ChatRole.User, Text = text, State = ChatState.Done });
             }
+            _deltaAccum = "";
             OnChanged?.Invoke();
         }
 
         public static void AddSystemMessage(string text)
         {
-            lock (_lock) { _entries.Add(new ChatEntry { Role = ChatRole.Assistant, Text = text, State = ChatState.Done, IsContext = true }); }
+            lock (_lock)
+            {
+                _entries.Add(new ChatEntry { Role = ChatRole.Assistant, Text = text, State = ChatState.Done, IsContext = true });
+            }
             OnChanged?.Invoke();
+        }
+
+        // ===== 流式文本 REPLACE 语义 =====
+
+        /// <summary>流式文本 delta — 累积后替换。空串信号 = 新 text block 开始，创建新条目</summary>
+        public static void OnAssistantText(string text)
+        {
+            lock (_lock)
+            {
+                if (string.IsNullOrEmpty(text))
+                {
+                    // content_block_start{text} → 结束上一条流式，新建条目
+                    _deltaIsThinking = false;
+                    _deltaAccum = "";
+                    FinalizeStreamingLocked();
+                    _streamingEntry = new ChatEntry { Role = ChatRole.Assistant, State = ChatState.Streaming };
+                    _entries.Add(_streamingEntry);
+                }
+                else
+                {
+                    if (_deltaIsThinking) { _deltaIsThinking = false; _deltaAccum = ""; }
+                    _deltaAccum += text;
+                    if (_streamingEntry == null || _streamingEntry.State != ChatState.Streaming)
+                    {
+                        _streamingEntry = new ChatEntry { Role = ChatRole.Assistant, State = ChatState.Streaming };
+                        _entries.Add(_streamingEntry);
+                    }
+                    _streamingEntry.Text = _deltaAccum;       // REPLACE 语义
+                    _streamingEntry.ThinkingText = "";
+                    _streamingEntry.CachedHeight = 0f;
+                }
+            }
+            OnChanged?.Invoke();
+        }
+
+        /// <summary>流式思考 delta — 累积后替换。空串信号 = 新 thinking block 开始，创建新条目</summary>
+        public static void OnAssistantThinking(string thinking)
+        {
+            lock (_lock)
+            {
+                if (string.IsNullOrEmpty(thinking))
+                {
+                    // content_block_start{thinking} → 结束上一条流式，新建条目
+                    _deltaIsThinking = true;
+                    _deltaAccum = "";
+                    FinalizeStreamingLocked();
+                    _streamingEntry = new ChatEntry { Role = ChatRole.Assistant, State = ChatState.Streaming };
+                    _entries.Add(_streamingEntry);
+                }
+                else
+                {
+                    if (!_deltaIsThinking) { _deltaIsThinking = true; _deltaAccum = ""; }
+                    _deltaAccum += thinking;
+                    if (_streamingEntry == null || _streamingEntry.State != ChatState.Streaming)
+                    {
+                        _streamingEntry = new ChatEntry { Role = ChatRole.Assistant, State = ChatState.Streaming };
+                        _entries.Add(_streamingEntry);
+                    }
+                    _streamingEntry.ThinkingText = _deltaAccum;  // REPLACE 语义
+                    _streamingEntry.CachedHeight = 0f;
+                }
+            }
+            OnChanged?.Invoke();
+        }
+
+        private static void FinalizeStreamingLocked()
+        {
+            if (_streamingEntry != null)
+            {
+                _streamingEntry.State = ChatState.Done;
+                _streamingEntry.CachedHeight = 0f;
+                _streamingEntry = null;
+            }
+        }
+
+        public static void FinishStreaming()
+        {
+            lock (_lock) { FinalizeStreamingLocked(); }
+            _deltaAccum = "";
+            OnChanged?.Invoke();
+        }
+
+        public static void MarkLastAborted()
+        {
+            lock (_lock)
+            {
+                if (_streamingEntry != null)
+                {
+                    _streamingEntry.State = ChatState.Done;
+                    if (string.IsNullOrEmpty(_streamingEntry.Text))
+                        _streamingEntry.Text = "（已中断）";
+                    _streamingEntry.CachedHeight = 0f;
+                    _streamingEntry = null;
+                }
+            }
+            _deltaAccum = "";
+            OnChanged?.Invoke();
+        }
+
+        // ===== 工具调用 =====
+
+        public static void AddToolCall(string toolId, string toolName, string meta)
+        {
+            lock (_lock)
+            {
+                _toolCalls.Add(new ToolCallInfo
+                {
+                    ItemId = toolId,
+                    Name = toolName.Replace("mcp__agent__", "").Replace("mcp__rimworld__", ""),
+                    Meta = meta,
+                    Status = ToolStatus.Running,
+                });
+
+                // 检测 SDK 任务工具调用（TaskCreate/TaskUpdate）
+                TrackSdkTaskLocked(toolName, meta);
+            }
+            OnChanged?.Invoke();
+        }
+
+        public static void FinishToolCall(string toolId, bool isError, double durationMs)
+        {
+            lock (_lock)
+            {
+                for (int i = _toolCalls.Count - 1; i >= 0; i--)
+                {
+                    if (_toolCalls[i].ItemId == toolId && _toolCalls[i].Status == ToolStatus.Running)
+                    {
+                        _toolCalls[i].Status = isError ? ToolStatus.Failed : ToolStatus.Completed;
+                        _toolCalls[i].DurationMs = durationMs;
+                        break;
+                    }
+                }
+            }
+            OnChanged?.Invoke();
+        }
+
+        // ===== SDK 任务追踪（仿 WebUI JS 端逻辑） =====
+
+        private static void TrackSdkTaskLocked(string toolName, string meta)
+        {
+            if (string.IsNullOrEmpty(meta)) return;
+            try
+            {
+                if (toolName.Contains("TaskCreate"))
+                {
+                    using var doc = JsonDocument.Parse(meta);
+                    var root = doc.RootElement;
+                    var subj = root.TryGetProperty("subject", out var s) ? s.GetString() ?? "?" : "?";
+                    _sdkTasks.Add(new SdkTaskItem
+                    {
+                        Id = (_sdkTasks.Count + 1).ToString(),
+                        Subject = subj,
+                        Status = "pending"
+                    });
+                }
+                else if (toolName.Contains("TaskUpdate"))
+                {
+                    using var doc = JsonDocument.Parse(meta);
+                    var root = doc.RootElement;
+                    var tid = root.TryGetProperty("taskId", out var t) ? t.GetString() ?? "" : "";
+                    var st = root.TryGetProperty("status", out var u) ? u.GetString() ?? "" : "";
+                    for (int i = _sdkTasks.Count - 1; i >= 0; i--)
+                    {
+                        if (_sdkTasks[i].Id == tid)
+                        {
+                            _sdkTasks[i].Status = st;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { /* 解析失败忽略 */ }
         }
 
         public static void Clear()
         {
-            lock (_lock) { _entries.Clear(); _toolCalls.Clear(); }
+            lock (_lock)
+            {
+                _entries.Clear();
+                _toolCalls.Clear();
+                _sdkTasks.Clear();
+                _streamingEntry = null;
+            }
+            _deltaAccum = "";
             OnChanged?.Invoke();
         }
 
-        // ===== UiMessage JSON 解析（由 BridgeClient.OnMessage → 直接调用） =====
+        // ===== BridgeBus UiMessage JSON 解析（由 BridgeClient.OnMessage → 直接调用） =====
 
         public static void ProcessMessage(string uiJson)
         {
@@ -109,117 +326,86 @@ namespace RimWorldAgent
                 var type = root.TryGetProperty("type", out var t) ? t.GetString() : "";
                 switch (type)
                 {
-                    case "text_block":
-                        EnqueueUiEvent(() => OnTextBlock(root)); break;
                     case "text_delta":
-                        EnqueueUiEvent(() => OnTextDelta(root)); break;
+                        EnqueueUiEvent(() => OnAssistantText(root.TryGetProperty("text", out var td) ? td.GetString() ?? "" : ""));
+                        break;
                     case "thinking_delta":
-                        EnqueueUiEvent(() => OnThinkingDelta(root)); break;
+                        EnqueueUiEvent(() => OnAssistantThinking(root.TryGetProperty("thinking", out var th) ? th.GetString() ?? "" : ""));
+                        break;
+                    case "text_block":
+                        EnqueueUiEvent(() => OnAssistantText(root.TryGetProperty("text", out var tb) ? tb.GetString() ?? "" : ""));
+                        break;
                     case "tool_call":
-                        EnqueueUiEvent(() => OnToolCall(root)); break;
+                        var toolId = root.TryGetProperty("id", out var ti) ? ti.GetString() ?? "" : "";
+                        var toolName = root.TryGetProperty("name", out var tn) ? tn.GetString() ?? "" : "";
+                        var toolInput = root.TryGetProperty("input", out var inp) ? inp.GetRawText() : "{}";
+                        EnqueueUiEvent(() => AddToolCall(toolId, toolName, toolInput));
+                        break;
+                    case "tool_result":
+                        var trId = root.TryGetProperty("id", out var tri) ? tri.GetString() ?? "" : "";
+                        var isErr = root.TryGetProperty("isError", out var ie) && ie.GetBoolean();
+                        var durMs = root.TryGetProperty("durationMs", out var dm) ? dm.GetDouble() : 0;
+                        EnqueueUiEvent(() => FinishToolCall(trId, isErr, durMs));
+                        break;
                     case "result":
-                        EnqueueUiEvent(() => OnResult()); break;
+                        EnqueueUiEvent(() => { FinishStreaming(); UpdateBudgetFromMessage(root); });
+                        break;
                     case "aborted":
-                        EnqueueUiEvent(() => OnAborted()); break;
+                        EnqueueUiEvent(() => MarkLastAborted());
+                        break;
                     case "system_init":
                         var m = root.TryGetProperty("model", out var mm) ? mm.GetString() : null;
                         if (m != null) CurrentModel = m;
                         SessionId = root.TryGetProperty("session_id", out var sid) ? sid.GetString() ?? "" : "";
                         break;
+                    case "system":
+                        var sysText = root.TryGetProperty("text", out var st) ? st.GetString() ?? "" : "";
+                        if (!string.IsNullOrEmpty(sysText))
+                            EnqueueUiEvent(() => AddSystemMessage(sysText));
+                        break;
+                    case "error":
+                        var errText = root.TryGetProperty("error", out var et) ? et.GetString() ?? "" : "";
+                        if (!string.IsNullOrEmpty(errText))
+                            EnqueueUiEvent(() => AddSystemMessage(errText));
+                        break;
                     case "user":
                         var txt = root.TryGetProperty("text", out var ut) ? ut.GetString() ?? "" : "";
                         if (!string.IsNullOrEmpty(txt)) OnUserMessage(txt);
                         break;
+                    case "budget_status":
+                        EnqueueUiEvent(() => UpdateBudgetFromMessage(root));
+                        break;
+                    case "agent-status":
+                        AgentStatus = root.TryGetProperty("role", out var ar) ? ar.GetString() ?? "" : "";
+                        break;
+                    case "sdk-tasks":
+                        // WebUI 端通过 trackSdkTask JS 处理，Dialog 端通过 tool_call 中的 TaskCreate/TaskUpdate 本地追踪
+                        break;
                 }
             }
-            catch { /* ignore parse errors */ }
+            catch (Exception ex)
+            {
+                Log.Warning($"[ChatDisplayState] 解析消息失败: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
-        private static void OnTextBlock(JsonElement root)
+        private static void UpdateBudgetFromMessage(JsonElement root)
         {
-            var text = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-            lock (_lock)
-            {
-                var last = _entries.Count > 0 ? _entries[_entries.Count - 1] : null;
-                if (last == null || last.State != ChatState.Streaming || last.Role != ChatRole.Assistant)
-                {
-                    last = new ChatEntry { Role = ChatRole.Assistant, State = ChatState.Streaming };
-                    _entries.Add(last);
-                }
-                last.Text += text;
-            }
-            OnChanged?.Invoke();
-        }
+            var used = root.TryGetProperty("used", out var u) ? u.GetInt64() : 0;
+            var limit = root.TryGetProperty("limit", out var l) ? l.GetInt64() : 0;
 
-        private static void OnTextDelta(JsonElement root)
-        {
-            var delta = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-            if (delta.Length == 0) return;
-            lock (_lock)
-            {
-                if (_entries.Count == 0) return;
-                var last = _entries[_entries.Count - 1];
-                if (last.Role != ChatRole.Assistant || last.State != ChatState.Streaming) return;
-                last.Text += delta;
-            }
-            OnChanged?.Invoke();
-        }
+            static string Fmt(long v) => v >= 1_000_000 ? $"{v / 1_000_000f:F1}M" : v >= 1000 ? $"{v / 1000f:F0}K" : v.ToString();
 
-        private static void OnThinkingDelta(JsonElement root)
-        {
-            var delta = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-            lock (_lock)
-            {
-                if (delta.Length == 0)
-                {
-                    if (_entries.Count > 0 && _entries[_entries.Count - 1].State == ChatState.Streaming)
-                        _entries[_entries.Count - 1].ThinkingText = "";
-                    return;
-                }
-                if (_entries.Count == 0) return;
-                var last = _entries[_entries.Count - 1];
-                if (last.Role != ChatRole.Assistant || last.State != ChatState.Streaming) return;
-                last.ThinkingText += delta;
-            }
-            OnChanged?.Invoke();
-        }
+            CurrentBudgetText = $"Token: {Fmt(used)}/{(limit > 0 ? Fmt(limit) : "--")}";
 
-        private static void OnToolCall(JsonElement root)
-        {
-            var id = root.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "";
-            var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-            var input = root.TryGetProperty("input", out var inp) ? inp.GetRawText() : "{}";
-            lock (_lock)
+            if (limit > 0 && used > 0)
             {
-                _toolCalls.Add(new ToolCallInfo
-                {
-                    ItemId = id,
-                    Name = name.Replace("mcp__agent__", "").Replace("mcp__rimworld__", ""),
-                    Meta = input,
-                    Status = ToolStatus.Running,
-                });
+                CurrentBudgetPercent = (float)((double)used / limit * 100.0);
+                CurrentBudgetStatus = used >= limit ? BudgetStatus.Exceeded
+                    : CurrentBudgetPercent >= 95f ? BudgetStatus.Critical
+                    : CurrentBudgetPercent >= 80f ? BudgetStatus.Warning
+                    : BudgetStatus.Ok;
             }
-            OnChanged?.Invoke();
-        }
-
-        private static void OnResult()
-        {
-            lock (_lock)
-            {
-                if (_entries.Count > 0 && _entries[_entries.Count - 1].State == ChatState.Streaming)
-                    _entries[_entries.Count - 1].State = ChatState.Done;
-            }
-            OnChanged?.Invoke();
-        }
-
-        private static void OnAborted()
-        {
-            lock (_lock)
-            {
-                if (_entries.Count > 0 && _entries[_entries.Count - 1].State == ChatState.Streaming)
-                    _entries[_entries.Count - 1].State = ChatState.Error;
-            }
-            OnChanged?.Invoke();
         }
     }
 }

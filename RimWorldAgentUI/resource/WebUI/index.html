@@ -929,7 +929,8 @@
     setStatus('connecting');
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = location.hostname || '127.0.0.1';
-    const url = protocol + '//' + host + ':19999';
+    const wsPort = {{BRIDGE_PORT}};
+    const url = protocol + '//' + host + ':' + wsPort;
     ws = new WebSocket(url);
 
     ws.onopen = () => {

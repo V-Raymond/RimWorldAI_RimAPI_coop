@@ -35,15 +35,16 @@ namespace RimWorldAgent
             try
             {
                 var bridgeUrl = AgentUIMod.Instance?.Settings?.BridgeWsUrl ?? "ws://127.0.0.1:19999";
+                var bridgePort = new Uri(bridgeUrl).Port;
                 _bridge = new BridgeClient(bridgeUrl);
                 _bridge.OnMessage += msg => ChatDisplayState.ProcessMessage(msg);
                 await _bridge.ConnectAsync();
                 Log.Message($"[AgentUI] BridgeBus 已连接: {bridgeUrl}");
 
-                // 启动 WebUI HTTP 服务（静态文件 + WS 中继）
                 var httpPort = AgentUIMod.Instance?.Settings?.WebUIPort ?? 19997;
-                _httpServer = new WebUIHttpServer(httpPort);
+                _httpServer = new WebUIHttpServer(httpPort, bridgePort);
                 _httpServer.Start();
+                Log.Message($"[AgentUI] WebUI: http://localhost:{httpPort}");
             }
             catch (Exception ex) { Log.Warning($"[AgentUI] 初始化失败: {ex.Message}"); }
         }

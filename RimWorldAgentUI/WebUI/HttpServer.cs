@@ -17,15 +17,18 @@ namespace RimWorldAgent
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
         private readonly int _port;
+        private readonly int _bridgePort;
         private readonly string _webRoot;
 
         public int Port => _port;
         public bool IsRunning => _listener != null;
 
+        /// <param name="bridgePort">BridgeBus WS 端口，用于 index.html 模板替换</param>
         /// <param name="webRoot">index.html 所在目录</param>
-        public WebUIHttpServer(int port = 19997, string? webRoot = null)
+        public WebUIHttpServer(int port = 19997, int bridgePort = 19999, string? webRoot = null)
         {
             _port = port;
+            _bridgePort = bridgePort;
             _webRoot = webRoot ?? FindWebRoot();
         }
 
@@ -80,6 +83,13 @@ namespace RimWorldAgent
                 if (File.Exists(filePath))
                 {
                     var bytes = File.ReadAllBytes(filePath);
+                    // HTML 文件模板替换 → JS 中 {{BRIDGE_PORT}} 替换为实际端口
+                    if (path.EndsWith(".html"))
+                    {
+                        var html = Encoding.UTF8.GetString(bytes);
+                        html = html.Replace("{{BRIDGE_PORT}}", _bridgePort.ToString());
+                        bytes = Encoding.UTF8.GetBytes(html);
+                    }
                     var mime = path.EndsWith(".html") ? "text/html; charset=utf-8"
                              : path.EndsWith(".css") ? "text/css"
                              : path.EndsWith(".js") ? "application/javascript"
@@ -91,6 +101,7 @@ namespace RimWorldAgent
                 else { ctx.Response.StatusCode = 404; }
                 ctx.Response.Close();
             }
+            catch (HttpListenerException) { Log.Warning("[WebUI] 客户端已断开连接（正常网络行为）"); }
             catch (Exception ex) { Log.Warning($"[WebUI] 请求处理失败: {ex.Message}"); }
         }
 

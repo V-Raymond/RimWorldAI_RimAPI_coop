@@ -1,16 +1,14 @@
+using RimWorld;
 using UnityEngine;
 using Verse;
+using Verse.Sound;
 
 namespace RimWorldAgent
 {
-    /// <summary>
-    /// 游戏内右下角 AI 聊天按钮 — 切换 Dialog_AiChat 窗口。
-    /// 绿色虚线框 + "AI" 文字，对话框打开时变为绿色实心。
-    /// </summary>
+    /// <summary>右下角 AI 对话开关按钮 + 工具调用状态文字</summary>
     public class MapComponent_McpUI : MapComponent
     {
-        private const float BtnSize = 24f;
-        private bool _dialogOpen;
+        private bool _autoOpened;
 
         public MapComponent_McpUI(Map map) : base(map) { }
 
@@ -19,34 +17,59 @@ namespace RimWorldAgent
             base.MapComponentOnGUI();
             if (Find.CurrentMap == null) return;
 
-            var rect = new Rect(UI.screenWidth - BtnSize - 190f, UI.screenHeight - BtnSize - 35f,
-                BtnSize, BtnSize);
-
-            // 检查对话窗是否已打开
-            var dialog = Find.WindowStack?.WindowOfType<Dialog_AiChat>();
-            _dialogOpen = dialog != null;
-
-            var bgColor = _dialogOpen
-                ? new Color(0.15f, 0.5f, 0.15f, 0.5f)
-                : new Color(0.2f, 0.4f, 0.2f, 0.3f);
-            Widgets.DrawBoxSolid(rect, bgColor);
-
-            var textColor = _dialogOpen
-                ? new Color(0.3f, 1f, 0.3f, 0.9f)
-                : new Color(0.4f, 0.7f, 0.4f, 0.6f);
-            Text.Font = GameFont.Tiny;
-            GUI.color = textColor;
-            Widgets.Label(new Rect(rect.x + 3f, rect.y + 4f, BtnSize - 6f, BtnSize - 6f), "AI");
-            GUI.color = Color.white;
-
-            // 点击切换
-            if (Widgets.ButtonInvisible(rect))
+            // 首次加载自动打开 AI 对话窗口 + 设 3 倍速
+            if (!_autoOpened && MapComponent_AgentUI.IsConnected)
             {
-                if (_dialogOpen && dialog != null)
-                    dialog.Close();
-                else
-                    Find.WindowStack?.Add(new Dialog_AiChat());
+                _autoOpened = true;
+                if (!Find.WindowStack.IsOpen<Dialog_AiChat>())
+                    Find.WindowStack.Add(new Dialog_AiChat());
+                if (Find.TickManager != null)
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Superfast;
             }
+
+            // 放在时间控件上方，对齐原版 ToggleableIcon 大小
+            float btnSize = 24f;
+            float x = UI.screenWidth - 162f;
+            float y = UI.screenHeight - 72f;
+            Rect btnRect = new Rect(x, y, btnSize, btnSize);
+
+            bool isOpen = Find.WindowStack.IsOpen<Dialog_AiChat>();
+            bool streaming = ChatDisplayState.Snapshot.Count > 0
+                && ChatDisplayState.Snapshot[ChatDisplayState.Snapshot.Count - 1].State == ChatState.Streaming;
+
+            Color origColor = GUI.color;
+            if (streaming)
+                GUI.color = Time.realtimeSinceStartup % 1.0f < 0.5f ? Color.cyan : Color.white;
+            else if (!MapComponent_AgentUI.IsConnected)
+                GUI.color = Color.grey;
+            else if (isOpen)
+                GUI.color = Color.cyan;
+
+            if (Widgets.ButtonImage(btnRect, TexButton.Info))
+            {
+                if (isOpen)
+                    Find.WindowStack.WindowOfType<Dialog_AiChat>()?.Close();
+                else
+                    Find.WindowStack.Add(new Dialog_AiChat());
+
+                if (isOpen)
+                    SoundDefOf.Tick_Low.PlayOneShotOnCamera(null);
+                else
+                    SoundDefOf.Tick_High.PlayOneShotOnCamera(null);
+            }
+            GUI.color = origColor;
+
+            if (isOpen)
+            {
+                Rect markerRect = new Rect(btnRect.xMax - 6f, btnRect.yMax - 6f, 4f, 4f);
+                Widgets.DrawBoxSolid(markerRect, Color.green);
+            }
+
+            // 勾选框叠加层，匹配原版 ToggleableIcon 样式
+            Rect cbRect = new Rect(btnRect.x + btnRect.width / 2f, btnRect.y,
+                btnRect.height / 2f, btnRect.height / 2f);
+            Texture2D cbTex = isOpen ? Widgets.CheckboxOnTex : Widgets.CheckboxOffTex;
+            GUI.DrawTexture(cbRect, cbTex);
         }
     }
 }
