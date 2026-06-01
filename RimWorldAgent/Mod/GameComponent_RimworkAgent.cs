@@ -61,8 +61,8 @@ namespace RimWorldAgent
                 McpUrl = $"http://{gameHost}:{gamePort}",
                 McpPort = gamePort,
                 AgentMcpPort = settings?.AgentMcpPort ?? 9878,
-                CcbPort = 19999,
-                CcbWsUrl = "ws://127.0.0.1:19999",
+                CcbPort = 19998,
+                CcbWsUrl = "ws://127.0.0.1:19998",
                 ModelName = settings?.ModelName,
                 CcbAutoStart = true,
                 CcbAutoInstall = settings?.CcbAutoInstall ?? true,
@@ -85,10 +85,10 @@ namespace RimWorldAgent
             await _engine.InitAsync();
             _dbStore = dbStore;
 
-            // 启动 BridgeBus（Web 前端 WS 服务器，默认端口 19998）
+            // 启动 BridgeBus（Web 前端 WS 服务器，默认端口 19999）
             if (settings?.BridgeHost != "disabled")
             {
-                var bridgePort = settings?.BridgePort ?? 19998;
+                var bridgePort = settings?.BridgePort ?? 19999;
                 BridgeBus.Start(bridgePort);
             }
 

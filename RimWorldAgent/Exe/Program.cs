@@ -69,9 +69,9 @@ namespace RimWorldAgent
             Console.WriteLine($"RimWorldAgent 启动");
             Console.WriteLine($"  MCP: {mcpUrl}");
             Console.WriteLine($"  Project: {projectPath}");
-            Console.WriteLine($"  WebUI: http://localhost:19998");
+            Console.WriteLine($"  WebUI: http://localhost:19999");
 
-            BridgeBus.Start(19998);
+            BridgeBus.Start(19999);
 
             Console.WriteLine("等待游戏启动...");
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; _cts.Cancel(); };

@@ -58,7 +58,7 @@ RimWorldAgent (EXE/MOD)             RimWorldMCP (Mod DLL)
 │ McpClient ───────────── POST ───→ /mcp (tools/call)    │
 │ McpClient ───────────── GET ────→ /sse (tick 推送)     │
 │ AgentMcpServer :9878  ←───────── SDK tools/call         │
-│ CcbManager ── spawn ──→ cc-companion (Node.js :19999)  │
+│ CcbManager ── spawn ──→ cc-companion (Node.js :19998)  │
 └──────────────────────┘           └──────────────────────┘
 ```
 
@@ -137,7 +137,7 @@ SyncGameStatusAsync() → 刷新 tick + paused
 ```
                       CC Companion (Node.js)
                            │
-                    WS :19999
+                    WS :19998
                       chat / abort / SDK 消息
                            │
                     CcbWebSocket (C#)
@@ -227,4 +227,4 @@ publish/RimWorldAgent/1.6/Assemblies/
 
 **EXE**: `dotnet run --project RimWorldAgent/RimWorldAgent.csproj`
 **MOD**: 加载存档自动启动，Ctrl+Shift+C 聊天窗
-**Web 面板**: `http://127.0.0.1:19999/`
+**Web 面板**: `http://127.0.0.1:19998/`

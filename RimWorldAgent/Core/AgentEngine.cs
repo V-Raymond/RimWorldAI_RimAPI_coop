@@ -18,8 +18,8 @@ namespace RimWorldAgent.Core.AgentRuntime
         public string McpUrl { get; set; } = "http://localhost:9877";
         public int McpPort { get; set; } = 9877;
         public int AgentMcpPort { get; set; } = 9878;
-        public int CcbPort { get; set; } = 19999;
-        public string CcbWsUrl { get; set; } = "ws://127.0.0.1:19999";
+        public int CcbPort { get; set; } = 19998;
+        public string CcbWsUrl { get; set; } = "ws://127.0.0.1:19998";
         public string? CcbToken { get; set; }
         public string? ModelName { get; set; }
         public bool CcbAutoStart { get; set; } = true;

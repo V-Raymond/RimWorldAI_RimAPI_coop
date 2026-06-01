@@ -57,10 +57,7 @@ async function main() {
     startNewSession();
   }
 
-  const proc = createResponseProcessor(queryIterator, (msg) => setImmediate(() => busBroadcast(JSON.stringify(msg))));
-  proc.process().catch((err: any) => log(`SDK 处理异常: ${err.message}`));
-
-  // ===== WS Server =====
+  // ===== WS Server（先于 SDK 启动，避免竞态）=====
   const httpServer = createServer();
   const wss = new WebSocketServer({ server: httpServer });
   httpServer.listen(CONFIG.port, CONFIG.host);
@@ -110,6 +107,10 @@ async function main() {
       }
     });
   });
+
+  // WS server 就绪后启动 SDK 消息处理
+  const proc = createResponseProcessor(queryIterator, (msg) => setImmediate(() => busBroadcast(JSON.stringify(msg))));
+  proc.process().catch((err: any) => log(`SDK 处理异常: ${err.message}`));
 
   // ===== PID 文件 + 清理 =====
   const pidFile = join(process.cwd(), '.pid');

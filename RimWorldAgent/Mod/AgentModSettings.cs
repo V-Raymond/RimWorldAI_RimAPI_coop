@@ -32,7 +32,7 @@ namespace RimWorldAgent
 
         // BridgeBus（Web 前端 WS 服务）
         public string BridgeHost = "127.0.0.1";
-        public int BridgePort = 19998;
+        public int BridgePort = 19999;
 
         public override void ExposeData()
         {
@@ -52,7 +52,7 @@ namespace RimWorldAgent
             Scribe_Values.Look(ref ProjectPath, "projectPath", "");
             Scribe_Values.Look(ref CcbAutoInstall, "ccbAutoInstall", true);
             Scribe_Values.Look(ref BridgeHost, "bridgeHost", "127.0.0.1");
-            Scribe_Values.Look(ref BridgePort, "bridgePort", 19998);
+            Scribe_Values.Look(ref BridgePort, "bridgePort", 19999);
         }
     }
 }

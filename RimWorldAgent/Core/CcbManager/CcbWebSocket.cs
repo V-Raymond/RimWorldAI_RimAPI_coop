@@ -61,7 +61,7 @@ public class CcbWebSocket : IDisposable
     /// <summary>SDK 原始消息（JSON string），供 BridgeBus 中继到 Web 前端</summary>
     public event Action<string>? OnRawSdkMessage;
 
-    public CcbWebSocket(string url = "ws://localhost:19999", string token = "")
+    public CcbWebSocket(string url = "ws://localhost:19998", string token = "")
     {
         _url = url;
         _token = token;

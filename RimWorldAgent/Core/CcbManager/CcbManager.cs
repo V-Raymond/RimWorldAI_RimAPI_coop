@@ -28,7 +28,7 @@ namespace RimWorldAgent.Core.CcbManager
         /// <summary>TickAndRestart 重启了 companion 进程时为 true，调用方检查后应清除</summary>
         public bool WasRestarted { get; set; }
 
-        public CcbManager(string companionDir, string projectPath, int ccbPort = 19999, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block")
+        public CcbManager(string companionDir, string projectPath, int ccbPort = 19998, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block")
         {
             _companionDir = companionDir;
             _projectPath = projectPath;

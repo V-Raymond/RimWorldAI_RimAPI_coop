@@ -17,7 +17,7 @@ export const Thinking = {
 
 export const CONFIG: CompanionConfig = {
   host: process.env.CCB_HOST || '0.0.0.0',
-  port: parseInt(process.env.CCB_PORT || '19999'),
+  port: parseInt(process.env.CCB_PORT || '19998'),
   token: process.env.CCB_AUTH_TOKEN || '',
   projectPath: process.env.RIMWORLD_PROJECT_PATH || process.cwd(),
   modelName: process.env.CCB_MODEL_NAME || '',

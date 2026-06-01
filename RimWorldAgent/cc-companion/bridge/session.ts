@@ -64,7 +64,7 @@ export function createSession(sdk: any, abortController?: AbortController) {
     abortController,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
-    disallowedTools: ['Bash', 'FileWrite', 'FileEdit', 'Write', 'Edit', 'Read', 'Glob', 'Grep', 'NotebookEdit', 'WebFetch', 'EnterWorktree', 'ExitWorktree', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', 'Skill'],
+    disallowedTools: ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'EnterWorktree', 'ExitWorktree', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', 'Skill'],
     autoCompactEnabled: true,
     includePartialMessages: true,
     settingSources: CONFIG.settingSources as any,

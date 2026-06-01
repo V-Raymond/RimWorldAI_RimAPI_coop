@@ -8,7 +8,7 @@ using RimWorldAgent.Core.AgentRuntime;
 namespace RimWorldAgent.Core
 {
     /// <summary>
-    /// 桥接总线 — Fleck WS :19998
+    /// 桥接总线 — Hook WS :19999
     /// SDK 原始消息 → ParseSdkToUiMessages → UiMessage → WS广播 + 本地回调
     /// 客户端消息 (chat/abort) → OnChat/OnAbort → 预算检查 + echo → CCB
     /// 所有 UI 消费同一数据源 (UiMessage 协议)，保证显示一致。
@@ -186,7 +186,7 @@ namespace RimWorldAgent.Core
 
         // ===== 生命周期 =====
 
-        public static void Start(int port = 19998)
+        public static void Start(int port = 19999)
         {
             if (_server != null) return;
             _server = new WebSocketServer($"ws://0.0.0.0:{port}");
