@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using RimWorldAgent.Core;
 using RimWorldAgent.Core.AgentRuntime;
 using RimWorldAgent.Core.CcbManager;
+using RimWorldAgent.Core.Data;
 using Verse;
 
 namespace RimWorldAgent
@@ -12,6 +13,7 @@ namespace RimWorldAgent
     {
         private AgentEngine? _engine;
         private ScribeDbStore? _dbStore;
+        private IConversationStore? _convStore;
         private bool _initialized;
         private int _lastTick;
 
@@ -93,7 +95,11 @@ namespace RimWorldAgent
 
             // UI 总线：SDK 消息 → UIMessageBus 广播 + 客户端消息 → CCB
             if (_engine.CcbWs != null)
+            {
+                _convStore = new MemoryConversationStore();
+                AgentLoop.ConversationStore = _convStore;
                 AgentLoop.WireUIMessageBus(_engine.CcbWs);
+            }
 
             _lastTick = 0;
             Log.Message("[agent-mod] Agent Runtime 初始化完成");
@@ -133,6 +139,8 @@ namespace RimWorldAgent
         {
             CoreLog.Info("[agent-mod] 返回主菜单，开始关闭 Agent 和 CCB...");
             UIMessageBus.Stop();
+            _convStore = null;
+            AgentLoop.ConversationStore = null;
             try
             {
                 _engine?.Dispose();

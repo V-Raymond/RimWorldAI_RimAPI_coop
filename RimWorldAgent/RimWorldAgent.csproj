@@ -39,6 +39,7 @@
     </Reference>
     <Reference Include="System.Net.Http" />
     <PackageReference Include="Fleck" Version="0.13.0.48" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
     <Reference Include="0Harmony">
       <HintPath>F:\SteamLibrary\steamapps\workshop\content\294100\2009463077\Current\Assemblies\0Harmony.dll</HintPath>
       <Private>False</Private>

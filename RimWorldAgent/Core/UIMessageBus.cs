@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Fleck;
 using RimWorldAgent.Core.AgentRuntime;
+using RimWorldAgent.Core.Data;
 
 namespace RimWorldAgent.Core
 {
@@ -66,8 +67,16 @@ namespace RimWorldAgent.Core
         public static event Action<string, ChatThinking?>? OnChat;
         public static event Action? OnAbort;
 
+        /// <summary>客户端请求历史记录，(socket, 请求条数 n)</summary>
+        public static event Action<IWebSocketConnection, int>? OnHistory;
+
+        /// <summary>SDK assistant 消息完整内容，(text, thinking, runId, agentType)</summary>
+        public static event Action<string, string, string, string>? OnAssistantContent;
+
         public static void RaiseChat(string text, ChatThinking? thinking = null) => OnChat?.Invoke(text, thinking);
         public static void RaiseAbort() => OnAbort?.Invoke();
+        public static void RaiseAssistantContent(string text, string thinking, string runId, string agentType)
+            => OnAssistantContent?.Invoke(text, thinking, runId, agentType);
 
         // ===== 生命周期 =====
 
@@ -111,6 +120,12 @@ namespace RimWorldAgent.Core
                             case "abort":
                                 OnAbort?.Invoke();
                                 break;
+                            case "history":
+                            {
+                                var n = root.TryGetProperty("n", out var nEl) && nEl.TryGetInt32(out var nv) ? Math.Min(nv, 200) : 30;
+                                OnHistory?.Invoke(socket, n);
+                                break;
+                            }
                         }
                     }
                     catch (Exception ex) { CoreLog.Info($"[UIMessageBus] 消息解析失败: {ex.Message}"); }
@@ -124,6 +139,8 @@ namespace RimWorldAgent.Core
             OnChat = null;
             OnAbort = null;
             OnDisplayMessage = null;
+            OnHistory = null;
+            OnAssistantContent = null;
             if (_server == null) return;
             foreach (var kv in _clients) { try { kv.Value.Close(); } catch { } }
             _clients.Clear();

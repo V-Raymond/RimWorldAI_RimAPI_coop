@@ -80,6 +80,10 @@ namespace RimWorldAgent
             UIMessageBus.Start(bridgePort);
             Console.WriteLine($"[Core] UIMessageBus: ws://0.0.0.0:{bridgePort}");
 
+            // 创建 SQLite 会话存储
+            AgentLoop.ConversationStore = new SqliteConversationStore(
+                Path.Combine(projectPath, "conversation.db"));
+
             // CCB ↔ UIMessageBus 双向中继（SDK↔UiMessage 转换在 AgentCore）
             if (engine.CcbWs != null)
                 AgentLoop.WireUIMessageBus(engine.CcbWs);

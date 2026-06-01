@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using RimWorldAgent.Core.CcbManager;
 
 namespace RimWorldAgent.Core.AgentRuntime
@@ -56,12 +57,46 @@ namespace RimWorldAgent.Core.AgentRuntime
                 TokenUsageTracker.Record(msg.Usage.InputTokens, msg.Usage.OutputTokens,
                     msg.Usage.CacheReadInputTokens ?? 0, msg.Usage.CacheCreationInputTokens ?? 0, 0);
 
+            // 积累 text + thinking 文本，用于会话录制
+            var textAccum = new System.Text.StringBuilder();
+            var thinkingAccum = new System.Text.StringBuilder();
+
             // 文本由 stream_event TextDelta 实时推送，assistant 只发 tool_call
             foreach (var block in msg.Content)
             {
-                if (block is SdkToolUseBlock tu)
+                if (block is SdkTextBlock tb)
+                {
+                    textAccum.Append(tb.Text);
+                }
+                else if (block is SdkThinkingBlock th)
+                {
+                    thinkingAccum.Append(th.Thinking);
+                }
+                else if (block is SdkToolUseBlock tu)
+                {
                     outList.Add(UiMessage.ToolCall(tu.Id, tu.Name, tu.Input));
+                }
             }
+
+            // 提取 runId 和 agentType 用于录制
+            var runId = "";
+            var agentType = "";
+            try
+            {
+                using var doc = JsonDocument.Parse(msg.RawJson);
+                var root = doc.RootElement;
+                // companion bridge 包装：先解 event.payload
+                if (root.TryGetProperty("event", out var _))
+                    root = root.TryGetProperty("payload", out var pl) ? pl : root;
+                runId = root.TryGetProperty("uuid", out var u) ? u.GetString() ?? "" : "";
+                agentType = root.TryGetProperty("parent_tool_use_id", out var pt) ? pt.GetString() ?? "" : "";
+            }
+            catch { /* best-effort */ }
+
+            var finalText = textAccum.ToString();
+            var finalThinking = thinkingAccum.ToString();
+            if (finalText.Length > 0 || finalThinking.Length > 0)
+                UIMessageBus.RaiseAssistantContent(finalText, finalThinking, runId, agentType);
         }
 
         private static void ParseStreamEvent(SdkStreamEventMessage msg, List<UiMessage> outList)

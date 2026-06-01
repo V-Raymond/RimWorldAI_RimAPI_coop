@@ -1004,6 +1004,37 @@
 
   // ===== Message handling =====
   function handleMessage(msg) {
+    // history_response 必须在 loadingHistory 守卫之前处理
+    if (msg.type === 'history_response') {
+      if (!loadingHistory) return;
+      messagesEl.innerHTML = '';
+      toolCount = 0; sdkTasks = []; updateToolCount(); renderSdkTasks();
+      seenUuids = {};
+      toolPanels = {};
+      thinkingPanels = {};
+      subAgentGroups = {};
+      currentThinkingIdx = -1;
+      lastAgentBody = null;
+      currentStreamAgent = null;
+      hasStreamedText = false;
+      toolStartTimes = {};
+      var msgs = msg.messages || [];
+      for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i];
+        if (m.type === 'assistant' || m.type === 'user') {
+          if (m.uuid) seenUuids[m.uuid] = true;
+          addMsgSimple(m);
+        }
+      }
+      scrollDeferred();
+      loadingHistory = false;
+      if (pendingWs.length) {
+        var queued = pendingWs.splice(0);
+        for (var k = 0; k < queued.length; k++) handleMessage(queued[k]);
+      }
+      return;
+    }
+
     // 历史加载期间缓冲 WS 消息，防止乱序
     if (loadingHistory) { pendingWs.push(msg); return; }
     // 中断后丢弃中间消息直到 result
@@ -1576,41 +1607,46 @@
   function loadHistory() {
     if (loadingHistory) return;
     loadingHistory = true;
-    fetch('/history?n=30').then(function(r) { return r.json(); }).then(function(msgs) {
-      messagesEl.innerHTML = '';
-      toolCount = 0; sdkTasks = []; updateToolCount(); renderSdkTasks();
-      if (!msgs || !msgs.length) return;
-      for (var i = 0; i < msgs.length; i++) {
-        var msg = msgs[i];
-        if (msg.type === 'text_block' || msg.type === 'user') {
-          addMsgSimple(msg);
-        } else if (msg.type === 'tool_call') {
-          makeToolUsePanel(msg.name, msg.input, msg.id);
-        } else if (msg.type === 'thinking_delta') {
-          if (msg.thinking) { var thp = createThinkingPanel(msg.thinking, i); finalizeThinkingPanel(thp); }
-        } else if (msg.type === 'result') {
-          var cls = msg.subtype === 'success' ? 'ok' : msg.subtype === 'aborted' ? 'warn' : 'error';
-          var label = msg.subtype === 'success' ? '✓ Done' : msg.subtype === 'aborted' ? '⏹ Aborted' : '✗ Failed';
-          addResult(cls, label);
+    pendingWs = [];
+    ws.send(JSON.stringify({ type: 'history', n: 30 }));
+    // 安全超时：5 秒无响应则放弃，释放 loadingHistory 锁
+    setTimeout(function() {
+      if (loadingHistory) {
+        console.warn('[history] 超时，释放 history 加载锁');
+        loadingHistory = false;
+        if (pendingWs.length) {
+          var queued = pendingWs.splice(0);
+          for (var k = 0; k < queued.length; k++) handleMessage(queued[k]);
         }
       }
-      scrollDeferred();
-    }).catch(function(e) { console.error('[history] fetch 失败', e); }).then(function() {
-      loadingHistory = false;
-      if (pendingWs.length) {
-        var queued = pendingWs.splice(0);
-        for (var k = 0; k < queued.length; k++) handleMessage(queued[k]);
-      }
-    });
+    }, 5000);
   }
 
   function addMsgSimple(msg) {
+    // 兼容旧格式 (text_block / user 顶层 text)
     if (msg.type === 'text_block') {
       makeAgentPanel(msg.text || '', null);
     } else if (msg.type === 'user') {
-      makeUserPanel(msg.text || '');
+      if (msg.text) { makeUserPanel(msg.text); }
+      else { addMsgFromContent(false, msg.message?.content, msg.agent_type); }
+    } else if (msg.type === 'assistant') {
+      addMsgFromContent(true, msg.message?.content, msg.agent_type);
     }
     scrollDeferred();
+  }
+
+  function addMsgFromContent(isAssistant, content, agentType) {
+    if (!content || !Array.isArray(content)) return;
+    for (var i = 0; i < content.length; i++) {
+      var block = content[i];
+      if (block.type === 'thinking' && block.thinking) {
+        var thp = createThinkingPanel(block.thinking, Date.now() + i);
+        finalizeThinkingPanel(thp);
+      } else if (block.type === 'text' && block.text) {
+        if (isAssistant) makeAgentPanel(block.text, agentType || null);
+        else makeUserPanel(block.text);
+      }
+    }
   }
 
   // ===== Send =====

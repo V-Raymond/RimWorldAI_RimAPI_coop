@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.CcbManager;
+using RimWorldAgent.Core.Data;
 using RimWorldAgent.Core.Mcp;
 using RimWorldAgent.Core.models;
 
@@ -12,6 +13,9 @@ namespace RimWorldAgent.Core.AgentRuntime
     public static class AgentLoop
     {
         public static long BudgetLimit { get; set; }
+
+        /// <summary>会话存储 — 由 EXE/MOD 在 WireUIMessageBus 前注入</summary>
+        public static IConversationStore? ConversationStore { get; set; }
 
         /// <summary>CCB ↔ UIMessageBus 双向中继：SDK↔UiMessage 转换在 AgentCore 完成</summary>
         public static void WireUIMessageBus(CcbWebSocket ws)
@@ -32,6 +36,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     UIMessageBus.PushUiMessage(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{BudgetLimit})"));
                     return;
                 }
+                ConversationStore?.RecordUserMessage(text);
                 CoreLog.Info($"[CCGUI_DEBUG] AgentLoop.OnChat 调用 SendAbort...");
                 await ws.SendAbort();
                 CoreLog.Info($"[CCGUI_DEBUG] AgentLoop.OnChat SendAbort done, PushUiMessage...");
@@ -43,6 +48,30 @@ namespace RimWorldAgent.Core.AgentRuntime
 
             // 客户端 abort → CCB
             UIMessageBus.OnAbort += async () => await ws.SendAbort();
+
+            // 客户端 history → 返回历史消息
+            UIMessageBus.OnHistory += (socket, n) =>
+            {
+                try
+                {
+                    var store = ConversationStore;
+                    if (store == null) return;
+                    var entries = store.GetRecent(n);
+                    var json = UiHistoryFormatter.FormatResponse(entries);
+                    socket.Send(json);
+                }
+                catch (Exception ex)
+                {
+                    CoreLog.Warn($"[AgentLoop] 历史查询失败: {ex.Message}");
+                    try { socket.Send(UiMessage.Error($"历史查询失败: {ex.Message}").ToJson()); } catch { }
+                }
+            };
+
+            // SDK assistant 完整内容 → 录制
+            UIMessageBus.OnAssistantContent += (text, thinking, runId, agentType) =>
+            {
+                ConversationStore?.RecordAssistantMessage(text, thinking, runId, agentType);
+            };
         }
 
         static AgentLoop()
@@ -52,6 +81,30 @@ namespace RimWorldAgent.Core.AgentRuntime
                 UIMessageBus.PushUiMessage(UiMessage.BudgetStatus(
                     TokenUsageTracker.TotalAllTokens, BudgetLimit, "Block",
                     TokenUsageTracker.TotalCacheReadTokens, TokenUsageTracker.TotalInputTokens, TokenUsageTracker.TotalCacheCreateTokens));
+            };
+
+            // 系统/错误消息 → 录制
+            UIMessageBus.OnDisplayMessage += json =>
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    var type = root.TryGetProperty("type", out var t) ? t.GetString() : "";
+                    if (type == "system")
+                    {
+                        var txt = root.TryGetProperty("text", out var st) ? st.GetString() ?? "" : "";
+                        if (!string.IsNullOrEmpty(txt))
+                            ConversationStore?.RecordSystemMessage(txt);
+                    }
+                    else if (type == "error")
+                    {
+                        var err = root.TryGetProperty("error", out var er) ? er.GetString() ?? "" : "";
+                        if (!string.IsNullOrEmpty(err))
+                            ConversationStore?.RecordSystemMessage(err);
+                    }
+                }
+                catch { /* best-effort，不影响显示管线 */ }
             };
         }
 
