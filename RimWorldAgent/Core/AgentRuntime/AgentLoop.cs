@@ -13,6 +13,32 @@ namespace RimWorldAgent.Core.AgentRuntime
         private static CcbWebSocket? _statusWs;
         public static long BudgetLimit { get; set; }
 
+        /// <summary>CCB ↔ BridgeBus 双向中继：SDK↔UiMessage 转换在 AgentCore 完成</summary>
+        public static void WireBridgeBus(CcbWebSocket ws)
+        {
+            // SDK 原始消息 → UiMessage → BridgeBus 广播
+            ws.OnRawSdkMessage += rawJson =>
+            {
+                var messages = SdkMessageParser.ParseToUiMessages(rawJson);
+                if (messages.Count > 0) BridgeBus.PushUiMessages(messages);
+            };
+
+            // 客户端 chat → 预算检查 + 回显 + CCB
+            BridgeBus.OnChat += async (text, thinking) =>
+            {
+                if (BudgetLimit > 0 && TokenUsageTracker.TotalAllTokens >= BudgetLimit)
+                {
+                    BridgeBus.PushGameEvent(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{BudgetLimit})"));
+                    return;
+                }
+                BridgeBus.PushGameEvent(UiMessage.User(text));
+                await ws.SendChat("bus", text, thinking);
+            };
+
+            // 客户端 abort → CCB
+            BridgeBus.OnAbort += async () => await ws.SendAbort();
+        }
+
         /// <summary>CCB WebSocket → Agent 状态推送到 Web 页面（幂等，仅保留最新连接）</summary>
         public static void WireCcbStatus(CcbWebSocket ccbWs)
         {

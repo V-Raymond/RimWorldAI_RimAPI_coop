@@ -80,17 +80,9 @@ namespace RimWorldAgent
             BridgeBus.Start(bridgePort);
             Console.WriteLine($"[Core] BridgeBus: ws://0.0.0.0:{bridgePort}");
 
-            // 中继：客户端 chat/abort → CCB
+            // CCB ↔ BridgeBus 双向中继（SDK↔UiMessage 转换在 AgentCore）
             if (engine.CcbWs != null)
-            {
-                engine.CcbWs.OnRawSdkMessage += json => BridgeBus.PushSdkMessage(json);
-                BridgeBus.OnChat += async (text, thinking) =>
-                {
-                    BridgeBus.PushGameEvent(UiMessage.User(text));
-                    await engine.CcbWs.SendChat("bus", text, thinking);
-                };
-                BridgeBus.OnAbort += async () => await engine.CcbWs.SendAbort();
-            }
+                AgentLoop.WireBridgeBus(engine.CcbWs);
 
             Console.WriteLine("Agent Main Loop 启动 (Ctrl+C 退出)");
 

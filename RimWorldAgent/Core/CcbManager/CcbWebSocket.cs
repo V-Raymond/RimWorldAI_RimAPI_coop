@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -58,7 +59,7 @@ public class CcbWebSocket : IDisposable
     public event Action? OnAborted;
     /// <summary>收到系统通知（中断摘要）</summary>
     public event Action<string>? OnSystemNotification;
-    /// <summary>SDK 原始消息（JSON string），供 BridgeBus 中继到 Web 前端</summary>
+    /// <summary>SDK 原始消息（JSON string）</summary>
     public event Action<string>? OnRawSdkMessage;
 
     public CcbWebSocket(string url = "ws://localhost:19998", string token = "")
@@ -139,6 +140,7 @@ public class CcbWebSocket : IDisposable
         if (string.IsNullOrEmpty(effort)) effort = "medium";
         // tokens=0 表示不限制
 
+        CoreLog.Info($"[CCGUI_DEBUG] CcbWS.SendChat session={session} mode={mode} effort={effort} tokens={tokens}");
         await SendEvent("chat", new
         {
             text,
@@ -150,6 +152,7 @@ public class CcbWebSocket : IDisposable
                 tokens
             }
         });
+        CoreLog.Info($"[CCGUI_DEBUG] CcbWS.SendChat SendEvent done");
     }
 
     /// <summary>发送工具执行结果回 Claude</summary>
@@ -166,7 +169,8 @@ public class CcbWebSocket : IDisposable
     /// <summary>发送游戏事件到 CC Companion</summary>
     public async Task SendEvent(string eventName, object payload)
     {
-        if (!IsReady) return;
+        if (!IsReady) { CoreLog.Info($"[CCGUI_DEBUG] CcbWS.SendEvent 跳过(event={eventName}) IsReady={IsReady}"); return; }
+        CoreLog.Info($"[CCGUI_DEBUG] CcbWS.SendEvent event={eventName}");
         await _eventLock.WaitAsync();
         try
         {
@@ -247,7 +251,6 @@ public class CcbWebSocket : IDisposable
 
     private void ProcessMessage(string json)
     {
-        // SDK 消息中继给 BridgeBus → Web 前端
         OnRawSdkMessage?.Invoke(json);
 
         try
@@ -260,6 +263,10 @@ public class CcbWebSocket : IDisposable
 
             switch (type)
             {
+                case "event":
+                    // companion bridge type=event 包装，由 SdkMessageParser 统一解包
+                    CoreLog.Info($"[CCGUI_DEBUG] ProcessMessage type=event (由 SdkMessageParser 解包)");
+                    break;
                 case "hello-ok":
                     CoreLog.Info("[CCGUI_DEBUG] 收到 hello-ok, 设置 _helloOk");
                     _helloOk?.TrySetResult(true);

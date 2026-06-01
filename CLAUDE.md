@@ -38,20 +38,28 @@ SimpleMspServer 被两者共同引用。Agent → companion 通过 WS :19999。
 ## 架构
 
 ```
-                      CC Companion (Node.js :19998)
-                           │
-              chat / abort  │  SDK 流式消息
-                           │
-                    CcbWebSocket (C#)
-                      │
-            SDK 消息 ↓
-         BridgeBus (WS :19999)
-          │                │
-    ┌─────┘                └─────┐
-    │ SDK 广播                   │ 客户端 chat/abort
-    ▼                           ▼
- WebUI(HTTP :19997)      游戏内 Dialog_AiChat
- (RimWorldAgentUI 模组)   (RimWorldAgentUI 模组)
+                    CC Companion (Node.js :19998)
+                         │
+            chat/abort  │  SDK 流式消息 (type=event)
+                         │
+                  CcbWebSocket (C#)
+                    │           │
+          OnRawSdkMessage    SendChat/Abort
+                    │           │
+              AgentLoop.WireBridgeBus
+              │                       │
+    SdkMessageParser            BridgeBus.OnChat/Abort
+    (SDK → UiMessage)                │
+              │               PushGameEvent(User)
+              ▼                       │
+       BridgeBus.PushUiMessages ─────┘
+              │
+      UiMessage WS :19999 广播
+         │                │
+    ┌────┘                └────┐
+    ▼                         ▼
+ WebUI :19997           Dialog_AiChat
+ (BridgeClient WS)      (BridgeClient WS)
 ```
 
 | 端口 | 服务 | 协议 | 所属 |

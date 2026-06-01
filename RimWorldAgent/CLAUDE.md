@@ -135,22 +135,37 @@ SyncGameStatusAsync() → 刷新 tick + paused
 ### 数据流
 
 ```
-                      CC Companion (Node.js :19998)
-                           │
-                    chat / abort / SDK 消息
-                           │
-                    CcbWebSocket (C#)
-                           │
-                     SDK 消息 ↓
-                  BridgeBus (WS :19999)
-                   │              │
-             SDK 广播            客户端 chat/abort
-                   │              │
-          ┌────────┘              └────────┐
-          ▼                                ▼
-    WebUI (RimWorldAgentUI)      游戏内 Dialog (RimWorldAgentUI)
-    浏览器 :19997                BridgeClient → ChatDisplayState
+                    CC Companion (Node.js :19998)
+                         │
+            chat/abort  │  SDK 流式消息 (type=event)
+                         │
+                  CcbWebSocket (C#)
+                    │           │
+          OnRawSdkMessage    SendChat/Abort
+                    │           │
+              ┌─────┴───────────┴─────┐
+              │  AgentLoop.WireBridgeBus  │
+              │                         │
+    SdkMessageParser              BridgeBus.OnChat/Abort
+    (SDK → UiMessage)                  │
+              │               PushGameEvent(User)
+              ▼                         │
+       BridgeBus.PushUiMessages ───────┘
+              │
+      UiMessage WS :19999 广播
+         │                │
+    ┌────┘                └────┐
+    ▼                         ▼
+ WebUI :19997           Dialog_AiChat
+ (BridgeClient WS)      (BridgeClient WS)
 ```
+
+| 层 | 职责 |
+|----|------|
+| **CcbWebSocket** | SDK WS 客户端，OnRawSdkMessage + SendChat/Abort |
+| **AgentLoop.WireBridgeBus** | SDK↔UiMessage 双向转换 + 预算检查 |
+| **SdkMessageParser** | SDK JSON → UiMessage 列表（含 type=event 解包）|
+| **BridgeBus** | 纯 UiMessage WS 广播 + 客户端消息接收 |
 
 UI 模组 `RimWorldAgentUI` 通过 WebSocket 连接 BridgeBus，不引用 Agent 项目。
 

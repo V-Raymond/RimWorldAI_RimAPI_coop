@@ -93,7 +93,7 @@ namespace RimWorldAgent
 
             // UI 总线：SDK 消息 → BridgeBus 广播 + 客户端消息 → CCB
             if (_engine.CcbWs != null)
-                WireBridgeBus(_engine.CcbWs);
+                AgentLoop.WireBridgeBus(_engine.CcbWs);
 
             _lastTick = 0;
             Log.Message("[agent-mod] Agent Runtime 初始化完成");
@@ -129,28 +129,6 @@ namespace RimWorldAgent
         }
 
         /// <summary>CcbWebSocket → BridgeBus 中继：SDK 消息 → 所有客户端，客户端消息 → CCB</summary>
-        private static void WireBridgeBus(CcbWebSocket ws)
-        {
-            // SDK 消息 → BridgeBus 广播
-            ws.OnRawSdkMessage += json => BridgeBus.PushSdkMessage(json);
-
-            // 客户端 chat/abort → CCB（Web UI 和游戏内 Dialog 都走 BridgeBus）
-            BridgeBus.OnChat += async (text, thinking) =>
-            {
-                var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
-                if (limit > 0 && TokenUsageTracker.TotalAllTokens >= limit)
-                {
-                    BridgeBus.PushGameEvent(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{limit})"));
-                    return;
-                }
-                // 回显用户消息到所有客户端
-                BridgeBus.PushGameEvent(UiMessage.User(text));
-                await ws.SendChat("bus", text, thinking);
-            };
-            BridgeBus.OnAbort += async () => await ws.SendAbort();
-            BridgeBus.IsReady = ws.IsReady;
-        }
-
         private void ShutdownEngine()
         {
             CoreLog.Info("[agent-mod] 返回主菜单，开始关闭 Agent 和 CCB...");
