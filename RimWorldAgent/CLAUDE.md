@@ -25,7 +25,7 @@ RimWorldAgent/
 │   │   ├── InternalToolRegistry.cs ★ 内部工具注册 + Skill 加载（IToolProvider）
 │   │   └── Tools/                 7 个内部工具 + ProxyToolProvider
 │   ├── models/                  ★ 类型定义 — SdkMessage / UiMessage / ChatChannel
-│   ├── Data/                    ★ 数据抽象层 — IDbStore + JsonDbStore (EXE) / ScribeDbStore (MOD)
+│   ├── Data/                    ★ 数据抽象层 — IDbStore + IConversationStore (ConversationEntry / MemoryConvStore / SqliteConvStore / UiHistoryFormatter)
 │   ├── Mcp/                     MCP 客户端 + Agent MCP Server (:9878)
 │   ├── CcbManager/              CCB 子进程管理 + CcbWebSocket + TokenUsageTracker
 │   └── UIMessageBus.cs          ★ UI 总线 — Fleck WS :19999
@@ -60,10 +60,10 @@ RimWorldAgent (EXE/MOD)             RimWorldMCP (Mod DLL)
 
 ### 两种启动模式
 
-| 模式 | 进程 | IDbStore | IGameStateProvider |
-|------|------|----------|-------------------|
-| **EXE** | `RimWorldAgent.exe` | `JsonDbStore`（JSON 文件） | `RemoteGameStateProvider`（MCP 推送 + 查询） |
-| **MOD** | RimWorld 加载 DLL | `ScribeDbStore`（Scribe_Values） | `DirectGameStateProvider`（TickManager 直读） |
+| 模式 | 进程 | IDbStore | IConversationStore | IGameStateProvider |
+|------|------|----------|-------------------|-------------------|
+| **EXE** | `RimWorldAgent.exe` | `JsonDbStore`（JSON 文件） | `SqliteConversationStore`（SQLite WAL） | `RemoteGameStateProvider`（MCP 推送 + 查询） |
+| **MOD** | RimWorld 加载 DLL | `ScribeDbStore`（Scribe_Values） | `MemoryConversationStore`（List+lock） | `DirectGameStateProvider`（TickManager 直读） |
 
 ### DB 存储抽象 — IDbStore
 
@@ -174,17 +174,29 @@ C# 侧：`CcbWebSocket.ReceiveLoop` → `SdkMessage.FromJson` → `OnSdkMessage`
 | `user` | `UiUser` | `text` | 用户消息回显 |
 | `system` | `UiSystem` | `text` | 系统消息（暂停提醒等） |
 | `budget_status` | `UiBudgetStatus` | `used`, `limit`, `action`, `cacheRead`, `totalInput`, `cacheCreate` | Token 预算状态 |
+| `agent-status` | `UiAgentStatus` | `role` | Agent 阶段状态（PLAN / ACT / 休眠） |
 
 ##### UI → Agent（客户端消息）
 
 | type | 字段 | 说明 |
 |------|------|------|
 | `chat` | `text`, `thinking?` ({mode,effort,tokens?}) | 用户发送消息 |
-| `history` | `n` | 请求最近 N 条历史消息 |
+| `abort` | (无) | 中断当前会话 |
+| `history` | `n` | 请求最近 N 条历史消息（初始加载） |
+| `history_before` | `before_id`, `n` | 请求指定 ID 之前的更早消息（向上滚动） |
 
-C# 侧：`UIMessageBus.OnMessage` → `OnChat`/`OnAbort`/`OnHistory` 事件 → `AgentLoop.WireUIMessageBus`。
-`IConversationStore` 由 EXE/MOD 在 `WireUIMessageBus` 前注入，`OnChat` 回调中录制用户消息，
-`OnAssistantContent` 事件录制 assistant 完整回复，`OnHistory` 回调中查询历史。
+C# 侧：`UIMessageBus.OnMessage` → `OnChat`/`OnAbort`/`OnHistory`/`OnHistoryBefore` 事件 → `AgentLoop.WireUIMessageBus`。
+`IConversationStore` 由 EXE/MOD 在 `WireUIMessageBus` 前注入 `AgentLoop.ConversationStore`。
+录制点：
+- `OnChat` → `RecordUserMessage`（用户消息）
+- `SdkMessageParser.ParseAssistant` → `OnAssistantContent` → `RecordAssistantMessage`（AI 回复 text+thinking）
+- `SdkMessageParser` tool_use block → `OnToolCallRecorded` → `RecordToolCall`
+- `SdkMessageParser` tool_result block → `OnToolResultRecorded` → `RecordToolResult`
+- `AgentLoop` 静态构造 `OnDisplayMessage` → 过滤 `system`/`error` → `RecordSystemMessage`
+- `RunSessionAsync` 发送 System Prompt 后 → `RecordSystemMessage("[System Prompt] ...")`
+
+新客户端连接：`OnClientConnected` → 推送 `agent-status` + `budget_status` 初始状态。
+阶段变化：`AgentOrchestrator.OnStatusChanged` → `UiAgentStatus` WS 广播。
 
 ---
 
@@ -239,13 +251,14 @@ SDK 工具调用不经过 companion。
 11. SDK → companion: {type:'stream_event',event:{type:'content_block_start',content_block:{type:'tool_use'},id:'...',name:'get_game_speed'}}
     → SdkMessageParser → UiToolCall(id,name,"") → UI 渲染工具卡片
 12. SDK → companion: {type:'assistant',message:{content:[{type:'tool_use',id:'...',name:'get_game_speed',input:{...}}]}}
-    → SdkMessageParser → UiToolCall(id,name,input) → UI 更新工具卡片 input
-    → AgentLoop.OnAssistantContent(text,thinking,runId,agentType) → ConversationStore 录制
-13. SDK MCP → Agent MCP :9878 → ProxyToolProvider → 游戏 MCP :9877 → 工具执行
-14. SDK → companion: {type:'user',message:{content:[{type:'tool_result',tool_use_id:'...',is_error:false,content:'...'}]}}
-    → SdkMessageParser → UiToolResult(id,isError,0,content) → UI 显示工具结果
-15. SDK → companion: {type:'stream_event',...text_delta...} → UiTextDelta → UI 流式渲染正文
-16. SDK → companion: {type:'result',subtype:'success'} → UiResult → UI 结束标记
+    → SdkMessageParser → UiToolCall(id,name,input) → UI 更新工具卡片 input + OnToolCallRecorded → RecordToolCall
+13. SDK → companion: {type:'assistant',message:{content:[{type:'text',text:'...'}]}}
+    → SdkMessageParser → OnAssistantContent(text,thinking,runId,agentType) → RecordAssistantMessage
+14. SDK MCP → Agent MCP :9878 → ProxyToolProvider → 游戏 MCP :9877 → 工具执行
+15. SDK → companion: {type:'user',message:{content:[{type:'tool_result',tool_use_id:'...',is_error:false,content:'...'}]}}
+    → SdkMessageParser → UiToolResult + OnToolResultRecorded → RecordToolResult → UI 显示工具结果
+16. SDK → companion: {type:'stream_event',...text_delta...} → UiTextDelta → UI 流式渲染正文
+17. SDK → companion: {type:'result',subtype:'success'} → UiResult → UI 结束标记
 ```
 
 ### 数据流
@@ -281,10 +294,13 @@ SDK 工具调用不经过 companion。
 | **CcbWebSocket** | `Core/CcbManager/CcbWebSocket.cs` | SDK WS 客户端，SendChat/Abort 直发顶层 type，Receive → SdkMessage.FromJson → OnSdkMessage |
 | **SdkMessage** | `Core/models/SdkMessage.cs` | 类型化消息模型，与 `@anthropic-ai/claude-agent-sdk` coreSchemas.ts 对齐。抽象基类 + 8 子类型，FromJson 工厂 + ValidateFields 校验 |
 | **SdkMessageParser** | `Core/AgentRuntime/SdkMessageParser.cs` | SdkMessage → UiMessage 转换（typed switch）。stream_event tool_use → UiToolCall，user tool_result → UiToolResult，assistant text 不重复推送（stream 已推） |
-| **AgentLoop** | `Core/AgentRuntime/AgentLoop.cs` | WireUIMessageBus — SDK↔UiMessage 双向中继 + 预算检查 + 用户消息回显 + 历史查询。RunSessionAsync — 会话生命周期 |
-| **UIMessageBus** | `Core/UIMessageBus.cs` | 纯 UiMessage WS 广播 + 客户端消息接收（不引用 SDK 类型）。单条 PushUiMessage / 批量 PushUiMessages，OnChat/OnAbort/OnHistory 事件 |
-| **IConversationStore** | `Core/Data/IConversationStore.cs` | 多轮对话持久化抽象 — RecordUserMessage / RecordAssistantMessage / RecordSystemMessage / GetRecent |
-| **ChatChannel** | `Core/models/ChatChannel.cs` | 聊天频道常量 Bus/System（C# 与 TS companion protocol.ts 对齐） |
+| **AgentLoop** | `Core/AgentRuntime/AgentLoop.cs` | WireUIMessageBus — SDK↔UiMessage 双向中继 + 预算检查 + 用户消息回显 + 历史查询/录制 + 初始状态推送 + OnClientConnected/OnHistory/OnHistoryBefore/OnAssistantContent/OnToolCallRecorded/OnToolResultRecorded 订阅。RunSessionAsync — 会话生命周期 + System Prompt 录制 |
+| **UIMessageBus** | `Core/UIMessageBus.cs` | 纯 UiMessage WS 广播 + 客户端消息接收（不引用 SDK 类型）。单条 PushUiMessage / 批量 PushUiMessages，OnChat/OnAbort/OnHistory/OnHistoryBefore/OnClientConnected 事件 |
+| **IConversationStore** | `Core/Data/IConversationStore.cs` | 多轮对话持久化抽象 — RecordUserMessage / RecordAssistantMessage / RecordSystemMessage / RecordToolCall / RecordToolResult / GetRecent / GetBefore / GetAt |
+| **ConversationEntry** | `Core/Data/ConversationEntry.cs` | 会话条目数据模型 — User/Assistant/System/ToolCall/ToolResult 五种角色 + tool 扩展字段 |
+| **SqliteConversationStore** | `Core/Data/SqliteConversationStore.cs` | SQLite WAL 持久化（EXE），自动建表 + ALTER TABLE 迁移，参数化查询 |
+| **MemoryConversationStore** | `Core/Data/MemoryConversationStore.cs` | 纯内存存储（MOD），List+lock |
+| **UiHistoryFormatter** | `Core/Data/UiHistoryFormatter.cs` | ConversationEntry → 前端 history_response / history_before_response JSON |
 
 UI 模组 `RimWorldAgentUI` 通过 WebSocket 连接 UIMessageBus，不引用 Agent 项目。
 
@@ -377,6 +393,13 @@ publish/RimWorldAgent/1.6/Assemblies/
 ├── Skills/
 └── ... (NuGet deps)
 ```
+
+## 设计文档
+
+| 文档 | 内容 |
+|------|------|
+| `design/agent-runtime.md` | Agent Runtime 架构 |
+| `design/conversation-history.md` | 会话历史持久化 — SQLite 表结构 + WS 协议 + 线程安全 + 向上滚动分页 |
 
 ## 运行
 

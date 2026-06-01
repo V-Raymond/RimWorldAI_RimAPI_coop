@@ -24,7 +24,7 @@ RimWorldAI/
 │   │   ├── UIMessageBus.cs   ★ UI 总线 — Fleck WS :19999，UiMessage 广播 + 客户端消息 → CCB
 │   │   ├── models/           SdkMessage / UiMessage / ChatChannel 类型定义     
 │   │   ├── Mcp/              MCP 客户端 + Agent MCP Server :9878
-│   │   └── Data/             ★ IDbStore 抽象 — JsonDbStore (EXE) / ScribeDbStore (MOD)
+│   │   └── Data/             ★ IDbStore + IConversationStore — JSON+SQLite (EXE) / Scribe+MEM (MOD)
 │   ├── Mod/                  GameComponent + UI + Harmony Hooks
 │   ├── Exe/                  独立 EXE 入口
 │   ├── resource/WebUI/       Web 前端静态文件
@@ -117,6 +117,7 @@ dotnet build RimWorldAI.sln
 | `design/token-budget-system.md` | Token 预算 |
 | `design/mcp-server-integration.md` | MCP Server 集成 |
 | `design/agent-runtime.md` | Agent Runtime |
+| `design/conversation-history.md` | 会话历史持久化（SQLite + WS 协议） |
 | `design/tool-result-suffix.md` | Tool Result Suffix |
 
 ### 提交
