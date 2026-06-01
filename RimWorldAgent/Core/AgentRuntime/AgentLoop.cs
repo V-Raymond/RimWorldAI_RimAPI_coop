@@ -165,6 +165,16 @@ namespace RimWorldAgent.Core.AgentRuntime
             };
         }
 
+        /// <summary>剥离 RimWorld 富文本标签（color/size/b/i），保留纯文本。
+        /// 例如 &lt;color=#FF3333FF&gt;哈瓦恩沃希&lt;/color&gt; → 哈瓦恩沃希</summary>
+        private static string StripRichTags(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+            // 移除闭合标签: </color>, </size>, </b>, </i>
+            var s = System.Text.RegularExpressions.Regex.Replace(text, "</?(?:color|size|b|i|material)[^>]*>", "");
+            return s;
+        }
+
         private static void PushInitialBudget()
         {
             UIMessageBus.PushUiMessage(UiMessage.BudgetStatus(
@@ -183,10 +193,13 @@ namespace RimWorldAgent.Core.AgentRuntime
             mcp.OnGameEvent += evt =>
             {
                 CoreLog.Info($"[event] {evt.Method}: {evt.Category}/{evt.Severity}: {evt.Summary}");
-                var summary = $"[{evt.Severity}/{evt.Category}] {evt.Summary}";
+                var cleanSummary = StripRichTags(evt.Summary);
+                var summary = $"[{evt.Severity}/{evt.Category}] {cleanSummary}";
                 AgentOrchestrator.RequestInterrupt(summary);
                 _ = AgentOrchestrator.NotisAgent(summary);
                 ToolDispatcher.MarkNotifReceived();
+                // 推送通知到 UI 供用户查看
+                UIMessageBus.PushUiMessage(UiMessage.System(summary));
             };
         }
 

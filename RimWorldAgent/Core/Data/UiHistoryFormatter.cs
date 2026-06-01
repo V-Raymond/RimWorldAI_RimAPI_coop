@@ -58,7 +58,7 @@ namespace RimWorldAgent.Core.Data
                 return new
                 {
                     type = "tool_call",
-                    id = entry.Id,
+                    id = entry.RunId,
                     name = entry.ToolName ?? "",
                     input = entry.ToolInput ?? ""
                 };
@@ -69,7 +69,7 @@ namespace RimWorldAgent.Core.Data
                 return new
                 {
                     type = "tool_result",
-                    id = entry.Id,
+                    id = entry.RunId,
                     tool_use_id = entry.RunId ?? "",
                     is_error = entry.IsToolError,
                     durationMs = entry.ToolDurationMs,
