@@ -10,9 +10,9 @@ namespace RimWorldAgent.Core.AgentRuntime
     /// </summary>
     public static class SdkMessageParser
     {
-        public static List<string> ParseToUiMessages(SdkMessage msg)
+        public static List<UiMessage> ParseToUiMessages(SdkMessage msg)
         {
-            var result = new List<string>();
+            var result = new List<UiMessage>();
             try
             {
                 switch (msg)
@@ -45,7 +45,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             return result;
         }
 
-        private static void ParseAssistant(SdkAssistantMessage msg, List<string> outList)
+        private static void ParseAssistant(SdkAssistantMessage msg, List<UiMessage> outList)
         {
             // Token 用量
             if (msg.Usage != null)
@@ -61,7 +61,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             }
         }
 
-        private static void ParseStreamEvent(SdkStreamEventMessage msg, List<string> outList)
+        private static void ParseStreamEvent(SdkStreamEventMessage msg, List<UiMessage> outList)
         {
             var evt = msg.Event;
             if (evt == null) return;
