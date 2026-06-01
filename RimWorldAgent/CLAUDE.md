@@ -165,8 +165,8 @@ C# 侧：`CcbWebSocket.ReceiveLoop` → `SdkMessage.FromJson` → `OnSdkMessage`
 | `text_delta` | `UiTextDelta` | `text` | 流式文本增量（空串=新 block 开始） |
 | `thinking_delta` | `UiThinkingDelta` | `thinking` | 流式思考增量（空串=新 block 开始） |
 | `text_block` | `UiTextBlock` | `text` | 完整文本块 |
-| `tool_call` | `UiToolCall` | `id`, `name`, `input` | 工具调用请求 |
-| `tool_result` | `UiToolResult` | `id`, `isError`, `durationMs` | 工具执行结果 |
+| `tool_call` | `UiToolCall` | `id`, `name`, `input` | 工具调用请求（stream_event block_start{tool_use} 推送名称，assistant 推送完整 input） |
+| `tool_result` | `UiToolResult` | `id`, `isError`, `durationMs`, `content?` | 工具执行结果（从 SDK user 消息提取） |
 | `result` | `UiResult` | `subtype`, `stop_reason` | 会话结束 |
 | `aborted` | `UiAborted` | (无) | 中断确认 |
 | `system_init` | `UiSystemInit` | `model`, `session_id` | SDK 初始化信息 |
@@ -180,9 +180,11 @@ C# 侧：`CcbWebSocket.ReceiveLoop` → `SdkMessage.FromJson` → `OnSdkMessage`
 | type | 字段 | 说明 |
 |------|------|------|
 | `chat` | `text`, `thinking?` ({mode,effort,tokens?}) | 用户发送消息 |
-| `abort` | (无) | 中断请求 |
+| `history` | `n` | 请求最近 N 条历史消息 |
 
-C# 侧：`UIMessageBus.OnMessage` → `OnChat`/`OnAbort` 事件 → `AgentLoop.WireUIMessageBus`。
+C# 侧：`UIMessageBus.OnMessage` → `OnChat`/`OnAbort`/`OnHistory` 事件 → `AgentLoop.WireUIMessageBus`。
+`IConversationStore` 由 EXE/MOD 在 `WireUIMessageBus` 前注入，`OnChat` 回调中录制用户消息，
+`OnAssistantContent` 事件录制 assistant 完整回复，`OnHistory` 回调中查询历史。
 
 ---
 
@@ -222,14 +224,28 @@ SDK 工具调用不经过 companion。
 
 ```
 1. UI WS → UIMessageBus  {"type":"chat","text":"你好","thinking":{"mode":"default","effort":"medium"}}
-2. UIMessageBus → AgentLoop.OnChat
+2. UIMessageBus → AgentLoop.OnChat → IConversationStore.RecordUserMessage("你好")
 3. AgentLoop → CcbWS.SendAbort()  →  companion  {"type":"abort"}
 4. AgentLoop → CcbWS.SendChat()   →  companion  {"type":"chat","text":"你好","session":"bus","thinking":{...}}
 5. companion → SDK: inputStream.enqueue({type:'user',message:{role:'user',content:'你好'}})
-6. SDK → companion: {type:'stream_event',event:{type:'content_block_start',content_block:{type:'text'}}}
+6. SDK → companion: {type:'stream_event',event:{type:'content_block_start',content_block:{type:'thinking'}}}
 7. companion → C#: busBroadcast(JSON) → CcbWS.ReceiveLoop → ProcessMessage
-8. ProcessMessage → SdkMessage.FromJson → OnSdkMessage → SdkMessageParser → UiMessage
-9. UIMessageBus.PushUiMessages → WS :19999 广播 → WebUI + Dialog 渲染
+8. ProcessMessage → SdkMessage.FromJson → OnSdkMessage → SdkMessageParser → UiThinkingDelta("")
+   → UIMessageBus.PushUiMessages → WS 广播 → UI 创建 thinking 面板
+9. SDK → companion: {type:'stream_event',event:{type:'content_block_delta',delta:{type:'thinking_delta',thinking:'考虑...'}}}
+   → SdkMessageParser → UiThinkingDelta("考虑...") → UI 追加思考文本
+10. SDK → companion: {type:'stream_event',event:{type:'content_block_start',content_block:{type:'text'}}}
+    → UiTextDelta("") → UI 关闭 thinking、创建 agent 面板
+11. SDK → companion: {type:'stream_event',event:{type:'content_block_start',content_block:{type:'tool_use'},id:'...',name:'get_game_speed'}}
+    → SdkMessageParser → UiToolCall(id,name,"") → UI 渲染工具卡片
+12. SDK → companion: {type:'assistant',message:{content:[{type:'tool_use',id:'...',name:'get_game_speed',input:{...}}]}}
+    → SdkMessageParser → UiToolCall(id,name,input) → UI 更新工具卡片 input
+    → AgentLoop.OnAssistantContent(text,thinking,runId,agentType) → ConversationStore 录制
+13. SDK MCP → Agent MCP :9878 → ProxyToolProvider → 游戏 MCP :9877 → 工具执行
+14. SDK → companion: {type:'user',message:{content:[{type:'tool_result',tool_use_id:'...',is_error:false,content:'...'}]}}
+    → SdkMessageParser → UiToolResult(id,isError,0,content) → UI 显示工具结果
+15. SDK → companion: {type:'stream_event',...text_delta...} → UiTextDelta → UI 流式渲染正文
+16. SDK → companion: {type:'result',subtype:'success'} → UiResult → UI 结束标记
 ```
 
 ### 数据流
@@ -264,9 +280,10 @@ SDK 工具调用不经过 companion。
 |----|------|------|
 | **CcbWebSocket** | `Core/CcbManager/CcbWebSocket.cs` | SDK WS 客户端，SendChat/Abort 直发顶层 type，Receive → SdkMessage.FromJson → OnSdkMessage |
 | **SdkMessage** | `Core/models/SdkMessage.cs` | 类型化消息模型，与 `@anthropic-ai/claude-agent-sdk` coreSchemas.ts 对齐。抽象基类 + 8 子类型，FromJson 工厂 + ValidateFields 校验 |
-| **SdkMessageParser** | `Core/AgentRuntime/SdkMessageParser.cs` | SdkMessage → UiMessage 转换（typed switch） |
-| **AgentLoop** | `Core/AgentRuntime/AgentLoop.cs` | WireUIMessageBus — SDK↔UiMessage 双向中继 + 预算检查 + 用户消息回显。RunSessionAsync — 会话生命周期 |
-| **UIMessageBus** | `Core/UIMessageBus.cs` | 纯 UiMessage WS 广播 + 客户端消息接收（不引用 SDK 类型）。单条 PushUiMessage / 批量 PushUiMessages |
+| **SdkMessageParser** | `Core/AgentRuntime/SdkMessageParser.cs` | SdkMessage → UiMessage 转换（typed switch）。stream_event tool_use → UiToolCall，user tool_result → UiToolResult，assistant text 不重复推送（stream 已推） |
+| **AgentLoop** | `Core/AgentRuntime/AgentLoop.cs` | WireUIMessageBus — SDK↔UiMessage 双向中继 + 预算检查 + 用户消息回显 + 历史查询。RunSessionAsync — 会话生命周期 |
+| **UIMessageBus** | `Core/UIMessageBus.cs` | 纯 UiMessage WS 广播 + 客户端消息接收（不引用 SDK 类型）。单条 PushUiMessage / 批量 PushUiMessages，OnChat/OnAbort/OnHistory 事件 |
+| **IConversationStore** | `Core/Data/IConversationStore.cs` | 多轮对话持久化抽象 — RecordUserMessage / RecordAssistantMessage / RecordSystemMessage / GetRecent |
 | **ChatChannel** | `Core/models/ChatChannel.cs` | 聊天频道常量 Bus/System（C# 与 TS companion protocol.ts 对齐） |
 
 UI 模组 `RimWorldAgentUI` 通过 WebSocket 连接 UIMessageBus，不引用 Agent 项目。
