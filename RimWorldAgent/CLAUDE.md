@@ -118,6 +118,7 @@ public interface IGameStateProvider
 
 ```
 SyncGameStatusAsync() → 刷新 tick + paused
+├─ 优先 0: 冷启动检测 — HasEverSent=false 时 get_game_speed 检查游戏就绪 → RunAgent
 ├─ 弹框扫描 (2500 tick)
 ├─ 状态检测 (120 tick, 仅空闲)
 │   ├─ 暂停提醒 (>30s / 每 60s)
@@ -187,13 +188,14 @@ C# 侧：`CcbWebSocket.ReceiveLoop` → `SdkMessage.FromJson` → `OnSdkMessage`
 
 C# 侧：`UIMessageBus.OnMessage` → `OnChat`/`OnAbort`/`OnHistory`/`OnHistoryBefore` 事件 → `AgentLoop.WireUIMessageBus`。
 `IConversationStore` 由 EXE/MOD 在 `WireUIMessageBus` 前注入 `AgentLoop.ConversationStore`。
-录制点：
-- `OnChat` → `RecordUserMessage`（用户消息）
+录制点（**C# 侧统一，SDK 不回传 user echo**）：
+- `OnChat` → `RecordUserMessage` + `PushUiMessage(User)`（用户消息：落盘+推送）
 - `SdkMessageParser.ParseAssistant` → `OnAssistantContent` → `RecordAssistantMessage`（AI 回复 text+thinking）
 - `SdkMessageParser` tool_use block → `OnToolCallRecorded` → `RecordToolCall`
-- `SdkMessageParser` tool_result block → `OnToolResultRecorded` → `RecordToolResult`
+- `AgentLoop.OnToolUse` (Stopwatch 计时) + `SdkMessageParser` tool_result block → `OnToolResultRecorded` → `RecordToolResult(isError, durationMs, content)`
 - `AgentLoop` 静态构造 `OnDisplayMessage` → 过滤 `system`/`error` → `RecordSystemMessage`
-- `RunSessionAsync` 发送 System Prompt 后 → `RecordSystemMessage("[System Prompt] ...")`
+- `RunSessionAsync` 发送 System Prompt 后 → `RecordSystemMessage` + `PushUiMessage(System)`
+- `WireEvents.OnGameEvent` 游戏事件 → `PushUiMessage(User)` + `RecordUserMessage`（与 SDK 文本一致）
 
 新客户端连接：`OnClientConnected` → 推送 `agent-status` + `budget_status` 初始状态。
 阶段变化：`AgentOrchestrator.OnStatusChanged` → `UiAgentStatus` WS 广播。
@@ -326,6 +328,11 @@ SdkMessage (abstract)
 - `enter_act()` — 恢复游戏，进入 ACT
 - `GamePaceController`：`toggle_pause` 幂等，直接调 MCP，不维护本地暂停缓存
 
+### 工具耗时
+
+`AgentLoop.OnToolUse` Stopwatch 计时 → `_toolDurations[toolId] = elapsedMs` 暂存。
+SDK echo tool_result → `OnToolResultRecorded` → `TryRemove(toolId)` 读耗时 → `RecordToolResult(isError, dur, content)` 合并落盘。
+
 ### Tool Result Suffix — BuildModeSuffixAsync
 
 每次工具调用结果末尾注入模式+速度+提醒：
@@ -359,7 +366,26 @@ SdkMessage (abstract)
 
 ### 中断机制
 
-所有 MCP 事件触发 `RequestInterrupt(summary) → SendAbort()`，中断后新会话 prompt 顶部注入通知 + "如有必要可以暂停游戏"。
+立即中断 + 通知三路统一（SDK/UI/DB 文本一致）：
+
+```
+游戏事件 → StripRichTags → summary = "[Severity/Category] text"
+→ RequestInterrupt(summary):
+    InterruptSummary += summary                         // 累积
+    SendAbort()                                         // 杀旧 session
+    SendChat(ChatChannel.Bus, notifyText)               // 立即通知 SDK
+→ WireEvents:
+    PushUiMessage(User, notifyText)                     // UI (user 模式)
+    RecordUserMessage(notifyText)                       // DB
+
+notifyText = InterruptPromptPrefix + "\n" + summary + "\n" + InterruptPromptSuffix
+```
+
+`InterruptPromptPrefix = "## 紧急通知"`, `InterruptPromptSuffix = "请立即处理以上事项..."` 为 `AgentOrchestrator` 常量。
+SDK/UI/DB 三路使用完全相同的 `notifyText`，`ChatChannel.Bus` (user) 模式。
+Companion abort 采用**消息缓冲**：abort 触发 `buffering=true`，`startNewSession` 重建 session 后回放缓冲消息。
+
+### 工具耗时
 
 ### 线程安全
 
