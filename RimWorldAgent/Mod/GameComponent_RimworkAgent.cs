@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using RimWorldAgent.Core;
 using RimWorldAgent.Core.AgentRuntime;
 using RimWorldAgent.Core.CcbManager;
 using Verse;
@@ -84,59 +85,22 @@ namespace RimWorldAgent
             await _engine.InitAsync();
             _dbStore = dbStore;
 
-            // 注入 CcbWebSocket 到 CCClient（供 UI 使用）
-            if (_engine.CcbWs != null)
+            // 启动 BridgeBus（Web 前端 WS 服务器，默认端口 19998）
+            if (settings?.BridgeHost != "disabled")
             {
-                CCClient.SetSocket(_engine.CcbWs);
-                WireChatDisplayUi(_engine.CcbWs);
+                var bridgePort = settings?.BridgePort ?? 19998;
+                BridgeBus.Start(bridgePort);
             }
+
+            // UI 统一数据源：BridgeBus.OnDisplayMessage → ChatDisplayState
+            BridgeBus.OnDisplayMessage += ChatDisplayState.ProcessDisplayMessage;
+
+            // UI 总线：SDK 消息 → BridgeBus 广播 + 客户端消息 → CCB
+            if (_engine.CcbWs != null)
+                WireBridgeBus(_engine.CcbWs);
 
             _lastTick = 0;
             Log.Message("[agent-mod] Agent Runtime 初始化完成");
-        }
-
-        /// <summary>
-        /// 将 CcbWebSocket 事件桥接到 ChatDisplayState。
-        /// CcbWebSocket.ReceiveLoop 在后台线程运行，通过 EnqueueUiEvent 入队，
-        /// 由 Dialog_AiChat.DoWindowContents 在 UI 线程消费。
-        /// </summary>
-        private static void WireChatDisplayUi(CcbWebSocket ws)
-        {
-            ws.OnAssistantText += text =>
-                ChatDisplayState.EnqueueUiEvent(() =>
-                    ChatDisplayState.OnAssistantText(text));
-
-            ws.OnAssistantThinking += thinking =>
-                ChatDisplayState.EnqueueUiEvent(() =>
-                    ChatDisplayState.OnAssistantThinking(thinking));
-
-            ws.OnToolUse += (toolId, toolName, input) =>
-                {
-                    var meta = input?.ToString() ?? "";
-                    ChatDisplayState.EnqueueUiEvent(() =>
-                        ChatDisplayState.AddToolCall(toolId, toolName, meta));
-                };
-
-            ws.OnResult += (subtype, _) =>
-                ChatDisplayState.EnqueueUiEvent(() =>
-                {
-                    ChatDisplayState.FinishStreaming();
-                    if (TokenUsageTracker.TotalAllTokens > 0)
-                    {
-                        var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
-                        ChatDisplayState.CurrentBudgetStatus = limit > 0
-                            ? TokenUsageTracker.CheckBudget(limit)
-                            : BudgetStatus.Ok;
-                    }
-                });
-
-            ws.OnAborted += () =>
-                ChatDisplayState.EnqueueUiEvent(() =>
-                    ChatDisplayState.MarkLastAborted());
-
-            ws.OnSystemNotification += text =>
-                ChatDisplayState.EnqueueUiEvent(() =>
-                    ChatDisplayState.AddSystemMessage(text));
         }
 
         public override void GameComponentUpdate()
@@ -146,6 +110,7 @@ namespace RimWorldAgent
             if (!_initialized || _engine == null) return;
 
             _engine.Tick();
+            BridgeBus.IsReady = _engine.CcbWs?.IsReady ?? false;
 
             if (Find.CurrentMap == null) return;
 
@@ -167,9 +132,33 @@ namespace RimWorldAgent
             _dbStore?.ScribeExpose();
         }
 
+        /// <summary>CcbWebSocket → BridgeBus 中继：SDK 消息 → 所有客户端，客户端消息 → CCB</summary>
+        private static void WireBridgeBus(CcbWebSocket ws)
+        {
+            // SDK 消息 → BridgeBus 广播
+            ws.OnRawSdkMessage += json => BridgeBus.PushSdkMessage(json);
+
+            // 客户端 chat/abort → CCB（Web UI 和游戏内 Dialog 都走 BridgeBus）
+            BridgeBus.OnChat += async text =>
+            {
+                var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
+                if (limit > 0 && TokenUsageTracker.TotalAllTokens >= limit)
+                {
+                    BridgeBus.PushGameEvent(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{limit})"));
+                    return;
+                }
+                // 回显用户消息到所有客户端
+                BridgeBus.PushGameEvent(UiMessage.User(text));
+                await ws.SendChat("bus", text);
+            };
+            BridgeBus.OnAbort += async () => await ws.SendAbort();
+            BridgeBus.IsReady = ws.IsReady;
+        }
+
         private void ShutdownEngine()
         {
             CoreLog.Info("[agent-mod] 返回主菜单，开始关闭 Agent 和 CCB...");
+            BridgeBus.Stop();
             try
             {
                 _engine?.Dispose();

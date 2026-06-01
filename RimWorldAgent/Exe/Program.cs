@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using RimWorldAgent.Core;
 using RimWorldAgent.Core.AgentRuntime;
 using RimWorldAgent.Core.Data;
 using RimWorldAgent.Core.Mcp;
@@ -68,10 +69,28 @@ namespace RimWorldAgent
             Console.WriteLine($"RimWorldAgent 启动");
             Console.WriteLine($"  MCP: {mcpUrl}");
             Console.WriteLine($"  Project: {projectPath}");
+
+            // 启动 BridgeBus — EXE 模式也一样开放 Web 前端端口
+            BridgeBus.Start(19998);
+
             Console.WriteLine("等待游戏启动...");
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; _cts.Cancel(); };
 
             await engine.InitAsync();
+
+            // 中继 SDK 消息 → Web 前端，Web 输入 → CCB
+            if (engine.CcbWs != null)
+            {
+                engine.CcbWs.OnRawSdkMessage += json => BridgeBus.PushSdkMessage(json);
+                BridgeBus.OnChat += async text =>
+                {
+                    BridgeBus.PushGameEvent(UiMessage.User(text));
+                    await engine.CcbWs.SendChat("bus", text);
+                };
+                BridgeBus.OnAbort += async () => await engine.CcbWs.SendAbort();
+                BridgeBus.IsReady = engine.CcbWs.IsReady;
+            }
+
             Console.WriteLine("Agent Main Loop 启动 (Ctrl+C 退出)");
 
             try
@@ -79,6 +98,7 @@ namespace RimWorldAgent
                 while (!_cts.IsCancellationRequested)
                 {
                     engine.Tick();
+                    BridgeBus.IsReady = engine.CcbWs?.IsReady ?? false;
                     await engine.TickAsync();
                     await Task.Delay(2000, _cts.Token);
                 }
@@ -86,6 +106,7 @@ namespace RimWorldAgent
             catch (OperationCanceledException) { }
 
             Console.WriteLine("RimWorldAgent 退出");
+            BridgeBus.Stop();
             engine.Dispose();
         }
 

@@ -43,15 +43,9 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         private static void PushBudgetUpdate(CcbWebSocket ws)
         {
-            _ = ws.SendEvent("budget-update", new
-            {
-                used = TokenUsageTracker.TotalAllTokens,
-                limit = BudgetLimit,
-                action = "Block",
-                cacheRead = TokenUsageTracker.TotalCacheReadTokens,
-                totalInput = TokenUsageTracker.TotalInputTokens,
-                cacheCreate = TokenUsageTracker.TotalCacheCreateTokens,
-            });
+            BridgeBus.PushGameEvent(UiMessage.BudgetStatus(
+                TokenUsageTracker.TotalAllTokens, BudgetLimit, "Block",
+                TokenUsageTracker.TotalCacheReadTokens, TokenUsageTracker.TotalInputTokens, TokenUsageTracker.TotalCacheCreateTokens));
         }
 
         /// <summary>MCP 游戏事件 → 所有通知都触发中断</summary>
@@ -150,7 +144,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             ccbWs.OnAborted += OnAborted;
             try
             {
-                await ccbWs.SendChat(prompt);
+                await ccbWs.SendChat("system", prompt);
                 // 活动感知超时：每次 tool_use / result 重置计时器，避免长对话被误杀
                 while (!tcs.Task.IsCompleted)
                 {

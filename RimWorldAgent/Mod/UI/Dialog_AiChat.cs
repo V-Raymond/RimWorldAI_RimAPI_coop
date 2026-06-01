@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RimWorld;
+using RimWorldAgent.Core;
 using RimWorldAgent.Core.AgentRuntime;
 using RimWorldAgent.Core.CcbManager;
 using UnityEngine;
@@ -95,16 +96,16 @@ namespace RimWorldAgent
             var text = _inputText.Trim();
             if (string.IsNullOrEmpty(text)) return;
 
-            if (!CCClient.IsReady)
+            if (!BridgeBus.IsReady)
             {
                 Messages.Message("Claude Code 未连接", MessageTypeDefOf.RejectInput, false);
                 return;
             }
 
             _inputText = "";
-            _ = CCClient.SendAbort();
+            BridgeBus.RaiseAbort();
             ChatDisplayState.OnUserMessage(text);
-            _ = CCClient.SendEventText("rimworld.chat", "UserMessage", text);
+            BridgeBus.RaiseChat(text);
         }
 
         // ========== 主布局 ==========
@@ -627,7 +628,7 @@ namespace RimWorldAgent
 
         private void DrawFooter(Rect rect)
         {
-            bool connected = CCClient.IsReady;
+            bool connected = BridgeBus.IsReady;
             float btnW = 22f;
             float btnH = rect.height - 4f;
             float y = rect.y + 2f;
@@ -698,7 +699,7 @@ namespace RimWorldAgent
             if (Widgets.ButtonText(abortRect, "中断"))
             {
                 ChatDisplayState.MarkLastAborted();
-                _ = CCClient.SendAbort();
+                BridgeBus.RaiseAbort();
             }
 
             Rect continueRect = new Rect(abortRect.x - actionBtnW - 4f, y, actionBtnW, actionBtnH);
@@ -707,14 +708,14 @@ namespace RimWorldAgent
             {
                 if (connected)
                 {
-                    _ = CCClient.SendAbort();
+                    BridgeBus.RaiseAbort();
                     var map = Find.CurrentMap;
                     if (map != null)
                     {
                         var colonists = PawnsFinder.AllMaps_FreeColonistsSpawned;
                         var overview = GameContextProvider.BuildColonyOverview(map, colonists, colonists.Count);
                         ChatDisplayState.AddSystemMessage(overview);
-                        _ = CCClient.SendEventText("rimworld.chat", "ColonyOverview", overview);
+                        BridgeBus.PushGameEvent(UiMessage.System(overview));
                     }
                 }
             }

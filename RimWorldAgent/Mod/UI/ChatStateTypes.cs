@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using RimWorldAgent.Core.AgentRuntime;
-using RimWorldAgent.Core.CcbManager;
 using Verse;
 
 namespace RimWorldAgent
@@ -58,6 +56,62 @@ namespace RimWorldAgent
         public static void EnqueueUiEvent(Action action)
         {
             lock (_eventLock) { _pendingEvents.Enqueue(action); }
+        }
+
+        /// <summary>BridgeBus → UiMessage → EnqueueUiEvent 分发到内部方法</summary>
+        public static void ProcessDisplayMessage(string json)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var type = root.TryGetProperty("type", out var t) ? t.GetString() : "";
+                switch (type)
+                {
+                    case "text_delta":
+                        EnqueueUiEvent(() => OnAssistantText(root.GetProperty("text").GetString() ?? ""));
+                        break;
+                    case "thinking_delta":
+                        EnqueueUiEvent(() => OnAssistantThinking(root.GetProperty("thinking").GetString() ?? ""));
+                        break;
+                    case "text_block":
+                        EnqueueUiEvent(() => OnAssistantText(root.GetProperty("text").GetString() ?? ""));
+                        break;
+                    case "tool_call":
+                        EnqueueUiEvent(() => AddToolCall(root.GetProperty("id").GetString() ?? "", root.GetProperty("name").GetString() ?? "", root.TryGetProperty("input", out var inp) ? inp.GetString() ?? "" : ""));
+                        break;
+                    case "result":
+                        EnqueueUiEvent(() => { FinishStreaming(); UpdateBudgetFromTracker(); });
+                        break;
+                    case "aborted":
+                        EnqueueUiEvent(() => MarkLastAborted());
+                        break;
+                    case "system_init":
+                        TokenUsageTracker.CurrentModel = root.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "";
+                        break;
+                    case "user":
+                        EnqueueUiEvent(() => OnUserMessage(root.GetProperty("text").GetString() ?? ""));
+                        break;
+                    case "error":
+                        EnqueueUiEvent(() => AddSystemMessage(root.GetProperty("error").GetString() ?? ""));
+                        break;
+                    case "system":
+                        EnqueueUiEvent(() => AddSystemMessage(root.GetProperty("text").GetString() ?? ""));
+                        break;
+                    case "budget_status":
+                        break;
+                }
+            }
+            catch (Exception ex) { CoreLog.Warn($"[ChatDisplayState] 解析显示消息失败: {ex.Message}"); }
+        }
+
+        private static void UpdateBudgetFromTracker()
+        {
+            if (TokenUsageTracker.TotalAllTokens > 0)
+            {
+                var limit = RimWorldAgentMod.Instance?.Settings?.TokenBudgetLimit ?? 0;
+                CurrentBudgetStatus = limit > 0 ? TokenUsageTracker.CheckBudget(limit) : BudgetStatus.Ok;
+            }
         }
 
         /// <summary>UI 线程调用，消费所有积压事件</summary>
@@ -243,28 +297,6 @@ namespace RimWorldAgent
         }
     }
 
-    /// <summary>CcbWebSocket 桥接，由 GameComponent 注入</summary>
-    public static class CCClient
-    {
-        private static CcbWebSocket? _ws;
-        public static bool IsConnected => _ws?.IsConnected ?? false;
-        public static bool IsReady => _ws?.IsReady ?? false;
-
-        public static void SetSocket(CcbWebSocket ws) => _ws = ws;
-
-        public static async Task SendEventText(string evt, string cat, string text, object? stats = null)
-        {
-            if (_ws != null)
-            {
-                await _ws.SendEvent(evt, new { category = cat, text, stats });
-            }
-        }
-
-        public static async Task SendAbort()
-        {
-            if (_ws != null) await _ws.SendAbort();
-        }
-    }
 
     /// <summary>威胁摘要（由 Agent 通过 MCP 更新）</summary>
     public static class BridgeLifecycle

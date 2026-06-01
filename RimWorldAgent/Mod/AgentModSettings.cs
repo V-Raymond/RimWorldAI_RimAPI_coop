@@ -30,6 +30,10 @@ namespace RimWorldAgent
         // CC Companion 依赖
         public bool CcbAutoInstall = true;
 
+        // BridgeBus（Web 前端 WS 服务）
+        public string BridgeHost = "127.0.0.1";
+        public int BridgePort = 19998;
+
         public override void ExposeData()
         {
             base.ExposeData();
@@ -47,6 +51,8 @@ namespace RimWorldAgent
             Scribe_Values.Look(ref SkillsDir, "skillsDir", "");
             Scribe_Values.Look(ref ProjectPath, "projectPath", "");
             Scribe_Values.Look(ref CcbAutoInstall, "ccbAutoInstall", true);
+            Scribe_Values.Look(ref BridgeHost, "bridgeHost", "127.0.0.1");
+            Scribe_Values.Look(ref BridgePort, "bridgePort", 19998);
         }
     }
 }
