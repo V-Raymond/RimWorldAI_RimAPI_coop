@@ -85,7 +85,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             OnStatusChanged?.Invoke(StatusText);
         }
 
-        /// <summary>统一中断入口：标记 + 摘要 + 立即 abort CCB 会话（无会话时 abort 是空操作，安全）</summary>
+        /// <summary>统一中断入口：标记 + 摘要 + 立即 abort → 立即发送通知 prompt</summary>
         public static void RequestInterrupt(string summary)
         {
             InterruptRequested = true;
@@ -95,7 +95,11 @@ namespace RimWorldAgent.Core.AgentRuntime
                 : InterruptSummary + "\n" + summary;
             CoreLog.Info($"[AgentOrchestrator] 中断请求: {summary}");
             if (CcbWs?.IsReady == true)
+            {
                 _ = CcbWs.SendAbort();
+                // abort 后立即发送通知（companion 缓冲机制保证不丢失）
+                _ = CcbWs.SendChat("system", $"## 紧急通知\n{summary}\n请立即处理。如有必要可以暂停游戏 (toggle_pause)。");
+            }
         }
 
         /// <summary>向 Agent 注入通知。优先 suffix 注入（AI 工具结果中看到），否则推送 UI 提示。</summary>
