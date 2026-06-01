@@ -23,7 +23,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                 if (messages.Count > 0) BridgeBus.PushUiMessages(messages);
             };
 
-            // 客户端 chat → 预算检查 + 回显 + CCB
+            // 客户端 chat → 中断当前会话 + 预算检查 + 回显 + CCB
             BridgeBus.OnChat += async (text, thinking) =>
             {
                 if (BudgetLimit > 0 && TokenUsageTracker.TotalAllTokens >= BudgetLimit)
@@ -31,6 +31,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     BridgeBus.PushGameEvent(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{BudgetLimit})"));
                     return;
                 }
+                await ws.SendAbort();
                 BridgeBus.PushGameEvent(UiMessage.User(text));
                 await ws.SendChat(ChatChannel.Bus, text, thinking);
             };

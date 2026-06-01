@@ -105,8 +105,7 @@ namespace RimWorldAgent
             }
 
             _inputText = "";
-            _ = Bridge?.SendAbort();   // 中断当前生成后发送新消息
-            ChatDisplayState.OnUserMessage(text);
+            // WS 回显会触发 ChatDisplayState.OnUserMessage，这里不重复调用
             await (Bridge?.SendChat(text) ?? System.Threading.Tasks.Task.CompletedTask);
         }
 
