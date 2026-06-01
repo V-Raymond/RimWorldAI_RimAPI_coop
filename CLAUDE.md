@@ -33,7 +33,7 @@ RimWorldAI/
 └── RimWorldAgent.Tests/      C# 测试
 
 四者关系：RimWorldMCP ↔ RimWorldAgent 通过 MCP 协议通信（互不引用）。
-SimpleMspServer 被两者共同引用。Agent → companion 通过 WS :19999。
+SimpleMspServer 被两者共同引用。Agent ↔ companion 通过 WS :19998，Agent ↔ UI 通过 UIMessageBus :19999。
 ```
 
 ## 架构
@@ -80,6 +80,7 @@ SimpleMspServer 被两者共同引用。Agent → companion 通过 WS :19999。
 - **UIMessageBus**：只负责 UiMessage WS 广播 + 客户端消息接收，不感知 SDK 格式
 - **RimWorldAgentUI**：独立模组，通过 WS 连接 UIMessageBus，自带 HTTP 服务提供 WebUI
 - **IDbStore + IGameStateProvider**：EXE/MOD 双模抽象，构造注入解耦
+- **IConversationStore**：多轮对话持久化抽象（ConversationEntry 数据模型），EXE=SQLite WAL，MOD=Memory+lock；录制点覆盖 User/Assistant/System/ToolCall/ToolResult
 - **工具调用通路**：SDK → `mcp__agent__*` → Agent MCP → Proxy → 游戏 MCP → 返回结果 → SDK。不经过 companion
 
 ## 构建
