@@ -189,34 +189,43 @@ namespace RimWorldAgent.Core
         public static void Start(int port = 19999)
         {
             if (_server != null) return;
+            CoreLog.Info($"[CCGUI_DEBUG] BridgeBus.Start 调用 port={port} _server=null");
             _server = new WebSocketServer($"ws://0.0.0.0:{port}");
             _server.Start(socket =>
             {
                 var id = socket.ConnectionInfo.Id;
+                CoreLog.Info($"[CCGUI_DEBUG] BridgeBus 新连接握手 id={id} ip={socket.ConnectionInfo.ClientIpAddress}");
                 socket.OnOpen = () =>
                 {
                     _clients[id] = socket;
-                    CoreLog.Info($"[BridgeBus] 客户端已连接: {socket.ConnectionInfo.ClientIpAddress}");
+                    CoreLog.Info($"[BridgeBus] 客户端已连接: {socket.ConnectionInfo.ClientIpAddress} id={id} 总数={_clients.Count}");
                 };
                 socket.OnClose = () =>
                 {
                     _clients.TryRemove(id, out _);
-                    CoreLog.Info($"[BridgeBus] 客户端已断开: {socket.ConnectionInfo.ClientIpAddress}");
+                    CoreLog.Info($"[BridgeBus] 客户端已断开: {socket.ConnectionInfo.ClientIpAddress} id={id} 剩余={_clients.Count}");
                 };
                 socket.OnMessage = msg =>
                 {
+                    CoreLog.Info($"[CCGUI_DEBUG] BridgeBus 收到消息 len={msg.Length} preview={Truncate(msg, 120)}");
                     try
                     {
                         using var doc = JsonDocument.Parse(msg);
                         var root = doc.RootElement;
                         var type = root.TryGetProperty("type", out var t) ? t.GetString() : "";
+                        CoreLog.Info($"[CCGUI_DEBUG] BridgeBus 解析 type={type}");
                         switch (type)
                         {
                             case "chat":
                                 var text = root.TryGetProperty("text", out var txt) ? txt.GetString() ?? "" : "";
-                                if (!string.IsNullOrEmpty(text)) OnChat?.Invoke(text);
+                                if (!string.IsNullOrEmpty(text))
+                                {
+                                    CoreLog.Info($"[CCGUI_DEBUG] BridgeBus 转发 chat text={Truncate(text, 60)}");
+                                    OnChat?.Invoke(text);
+                                }
                                 break;
                             case "abort":
+                                CoreLog.Info($"[CCGUI_DEBUG] BridgeBus 转发 abort");
                                 OnAbort?.Invoke();
                                 break;
                         }
@@ -224,11 +233,12 @@ namespace RimWorldAgent.Core
                     catch (Exception ex) { CoreLog.Info($"[BridgeBus] 消息解析失败: {ex.Message}"); }
                 };
             });
-            CoreLog.Info($"[BridgeBus] 已启动 ws://0.0.0.0:{port}");
+            CoreLog.Info($"[BridgeBus] 已启动 ws://0.0.0.0:{port} IsRunning={IsRunning}");
         }
 
         public static void Stop()
         {
+            CoreLog.Info($"[CCGUI_DEBUG] BridgeBus.Stop 调用 _server={_server != null} _clients={_clients.Count}");
             OnChat = null;
             OnAbort = null;
             OnDisplayMessage = null;
@@ -239,5 +249,7 @@ namespace RimWorldAgent.Core
             _server = null;
             CoreLog.Info("[BridgeBus] 已停止");
         }
+
+        private static string Truncate(string s, int max) => s.Length <= max ? s : s.Substring(0, max) + "...";
     }
 }

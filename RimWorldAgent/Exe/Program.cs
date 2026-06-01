@@ -3,7 +3,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using RimWorldAgent.Core;
 using RimWorldAgent.Core.AgentRuntime;
+using RimWorldAgent.Core.CcbManager;
 using RimWorldAgent.Core.Data;
 using RimWorldAgent.Core.Mcp;
 
@@ -73,6 +75,23 @@ namespace RimWorldAgent
 
             await engine.InitAsync();
 
+            // 启动 BridgeBus（Web UI 和游戏内 Dialog 的 WS 通信总线）
+            var bridgePort = 19999;
+            BridgeBus.Start(bridgePort);
+            Console.WriteLine($"[Core] BridgeBus: ws://0.0.0.0:{bridgePort}");
+
+            // 中继：客户端 chat/abort → CCB
+            if (engine.CcbWs != null)
+            {
+                engine.CcbWs.OnRawSdkMessage += json => BridgeBus.PushSdkMessage(json);
+                BridgeBus.OnChat += async text =>
+                {
+                    BridgeBus.PushGameEvent(UiMessage.User(text));
+                    await engine.CcbWs.SendChat("bus", text);
+                };
+                BridgeBus.OnAbort += async () => await engine.CcbWs.SendAbort();
+            }
+
             Console.WriteLine("Agent Main Loop 启动 (Ctrl+C 退出)");
 
             try
@@ -87,6 +106,7 @@ namespace RimWorldAgent
             catch (OperationCanceledException) { }
 
             Console.WriteLine("RimWorldAgent 退出");
+            BridgeBus.Stop();
             engine.Dispose();
         }
 

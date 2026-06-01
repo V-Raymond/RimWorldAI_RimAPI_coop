@@ -9,10 +9,14 @@ namespace RimWorldAgent
     /// <summary>基于 System.Net.WebSockets 的 BridgeBus WS 客户端，和 WebUI(index.html) 完全一致。</summary>
     public class BridgeClient : IDisposable
     {
+        private const int RECONNECT_INTERVAL = 1000;
+
         private ClientWebSocket? _ws;
         private CancellationTokenSource? _cts;
+        private CancellationTokenSource? _reconnectCts;
         private readonly string _url;
         private bool _isConnected;
+        private bool _disposed;
 
         public bool IsConnected => _isConnected && _ws?.State == WebSocketState.Open;
         public event Action<string>? OnMessage;
@@ -25,20 +29,24 @@ namespace RimWorldAgent
 
         public async Task ConnectAsync(CancellationToken ct = default)
         {
-            if (IsConnected) return;
+            if (_disposed || IsConnected) return;
             try
             {
+                CancelCurrentWs();
                 _ws = new ClientWebSocket();
                 _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                await _ws.ConnectAsync(new System.Uri(_url), _cts.Token);
+                await _ws.ConnectAsync(new Uri(_url), _cts.Token);
                 _isConnected = true;
+                Verse.Log.Message($"[BridgeClient] 已连接: {_url}");
                 OnConnectedChanged?.Invoke();
                 _ = ReceiveLoop(_cts.Token);
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 _isConnected = false;
-                Verse.Log.Warning($"[BridgeClient] 连接失败: {ex.Message}");
+                Verse.Log.Warning($"[BridgeClient] 连接失败 ({_url}): {ex.Message}");
+                if (!_disposed) ScheduleReconnect();
             }
         }
 
@@ -80,6 +88,7 @@ namespace RimWorldAgent
             {
                 _isConnected = false;
                 OnConnectedChanged?.Invoke();
+                if (!_disposed) ScheduleReconnect();
             }
         }
 
@@ -98,11 +107,48 @@ namespace RimWorldAgent
             catch (Exception ex) { Verse.Log.Warning($"[BridgeClient] 发送失败: {ex.Message}"); }
         }
 
+        // ===== 自动重连（固定间隔） =====
+
+        private void ScheduleReconnect()
+        {
+            if (_disposed) return;
+            CancelReconnect();
+            _reconnectCts = new CancellationTokenSource();
+            var token = _reconnectCts.Token;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(RECONNECT_INTERVAL, token);
+                    if (!_disposed) await ConnectAsync(token);
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
+
+        private void CancelReconnect()
+        {
+            _reconnectCts?.Cancel();
+            _reconnectCts?.Dispose();
+            _reconnectCts = null;
+        }
+
+        private void CancelCurrentWs()
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+            try { _ws?.Dispose(); } catch { }
+            _ws = null;
+        }
+
         public void Dispose()
         {
+            _disposed = true;
             _isConnected = false;
-            _cts?.Cancel();
-            try { _ws?.Dispose(); } catch { }
+            CancelReconnect();
+            CancelCurrentWs();
         }
     }
 }

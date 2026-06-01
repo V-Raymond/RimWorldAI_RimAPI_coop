@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using Verse;
 
 namespace RimWorldAgent
@@ -26,25 +25,27 @@ namespace RimWorldAgent
             if (!_initialized)
             {
                 _initialized = true;
-                _ = InitAsync();
+                InitAsync();
             }
         }
 
-        private async Task InitAsync()
+        private void InitAsync()
         {
             try
             {
                 var bridgeUrl = AgentUIMod.Instance?.Settings?.BridgeWsUrl ?? "ws://127.0.0.1:19999";
                 var bridgePort = new Uri(bridgeUrl).Port;
-                _bridge = new BridgeClient(bridgeUrl);
-                _bridge.OnMessage += msg => ChatDisplayState.ProcessMessage(msg);
-                await _bridge.ConnectAsync();
-                Log.Message($"[AgentUI] BridgeBus 已连接: {bridgeUrl}");
 
+                // HTTP 服务 — 立即启动，不依赖 BridgeBus 连接状态
                 var httpPort = AgentUIMod.Instance?.Settings?.WebUIPort ?? 19997;
                 _httpServer = new WebUIHttpServer(httpPort, bridgePort);
                 _httpServer.Start();
                 Log.Message($"[AgentUI] WebUI: http://localhost:{httpPort}");
+
+                // BridgeBus 连接 — fire-and-forget，失败自动指数退避重连
+                _bridge = new BridgeClient(bridgeUrl);
+                _bridge.OnMessage += msg => ChatDisplayState.ProcessMessage(msg);
+                _ = _bridge.ConnectAsync();
             }
             catch (Exception ex) { Log.Warning($"[AgentUI] 初始化失败: {ex.Message}"); }
         }
