@@ -253,7 +253,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     Volatile.Write(ref resultReceived, true);
             }
 
-            async void OnToolUse(string toolId, string toolName, JsonElement? input)
+            async void OnToolUse(string toolId, string toolName, string input)
             {
                 NoteActivity();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -261,7 +261,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                 Interlocked.Increment(ref pendingTools);
                 try
                 {
-                    await ToolDispatcher.HandleAsync(ccbWs, toolId, toolName, input);
+                     await ToolDispatcher.HandleAsync(ccbWs, toolId, toolName, input);
                 }
                 catch (Exception ex)
                 {

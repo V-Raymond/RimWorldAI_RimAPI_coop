@@ -49,7 +49,7 @@ public class CcbWebSocket : IDisposable
     /// <summary>收到 Claude 思考内容时触发</summary>
     public event Action<string>? OnAssistantThinking;
     /// <summary>收到 tool_use 请求时触发</summary>
-    public event Action<string, string, JsonElement?>? OnToolUse;
+    public event Action<string, string, string>? OnToolUse;
     /// <summary>回合结束</summary>
     public event Action<string, string?>? OnResult;
     /// <summary>收到中断确认</summary>
@@ -219,11 +219,7 @@ public class CcbWebSocket : IDisposable
                 case SdkAssistantMessage am:
                     foreach (var b in am.Content)
                         if (b is SdkToolUseBlock tu)
-                        {
-                            JsonElement? input = null;
-                            try { using var d = JsonDocument.Parse(tu.Input); input = d.RootElement; } catch (Exception ex) { CoreLog.Info($"[CcbWS] 解析 tool_use input 失败 ({tu.Name}): {ex.Message}"); }
-                            OnToolUse?.Invoke(tu.Id, tu.Name, input);
-                        }
+                            OnToolUse?.Invoke(tu.Id, tu.Name, tu.Input);
                     break;
 
                 case SdkUserMessage _:

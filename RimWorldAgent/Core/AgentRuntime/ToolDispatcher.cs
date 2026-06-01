@@ -46,14 +46,17 @@ namespace RimWorldAgent.Core.AgentRuntime
             lock (_tasks) _tasks.Clear();
         }
 
-        public static void TrackToolUse(string toolName, JsonElement? input)
+        public static void TrackToolUse(string toolName, string inputJson)
         {
-            if (input == null) return;
+            if (string.IsNullOrEmpty(inputJson)) return;
             try
             {
+                using var doc = JsonDocument.Parse(inputJson);
+                var input = doc.RootElement;
+
                 if (toolName.EndsWith("TaskCreate"))
                 {
-                    var subj = input.Value.TryGetProperty("subject", out var s) ? s.GetString() ?? "?" : "?";
+                    var subj = input.TryGetProperty("subject", out var s) ? s.GetString() ?? "?" : "?";
                     lock (_tasks)
                     {
                         var id = (_tasks.Count + 1).ToString();
@@ -62,8 +65,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 }
                 else if (toolName.EndsWith("TaskUpdate"))
                 {
-                    var tid = input.Value.TryGetProperty("taskId", out var ti) ? ti.GetString() ?? "" : "";
-                    var st = input.Value.TryGetProperty("status", out var ts) ? ts.GetString() ?? "" : "";
+                    var tid = input.TryGetProperty("taskId", out var ti) ? ti.GetString() ?? "" : "";
+                    var st = input.TryGetProperty("status", out var ts) ? ts.GetString() ?? "" : "";
                     if (st == "completed" || st == "deleted")
                     {
                         lock (_tasks) _tasks.RemoveAll(t => t.Id == tid);
@@ -83,7 +86,7 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         public static async Task HandleAsync(
             CcbWebSocket ccbWs,
-            string toolId, string toolName, JsonElement? input)
+            string toolId, string toolName, string input)
         {
             if (toolName is "get_notifications" or "dismiss_notification")
                 _notifReceivedCount = 0;
