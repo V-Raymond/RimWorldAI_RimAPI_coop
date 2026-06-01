@@ -1,13 +1,10 @@
-/**
- * SDK 会话管理 — AsyncStream + query + 响应处理
- */
+/** SDK 会话 — AsyncStream + query + onMessage 回调 */
 
 import { join, resolve, dirname } from 'path';
 import { homedir } from 'os';
+import { CONFIG, Thinking } from '../companion/config.js';
 import { buildSystemPrompt } from '../rimworld/context.js';
-import type { CompanionConfig } from '../companion/config.js';
-import { CONFIG, RuntimeState } from '../companion/config.js';
-import {Options, SYSTEM_PROMPT_DYNAMIC_BOUNDARY} from "@anthropic-ai/claude-agent-sdk";
+import { Options, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
 
 // ========== AsyncStream ==========
 
@@ -30,208 +27,88 @@ export class AsyncStream<T = any> {
   }
 
   enqueue(value: T): void {
-    if (this.readResolve) {
-      const r = this.readResolve;
-      this.readResolve = undefined;
-      r({ done: false, value });
-    } else {
-      this.queue.push(value);
-    }
+    if (this.readResolve) { const r = this.readResolve; this.readResolve = undefined; r({ done: false, value }); }
+    else this.queue.push(value);
   }
 
   done(): void {
     this.isDone = true;
-    if (this.readResolve) {
-      const r = this.readResolve;
-      this.readResolve = undefined;
-      r({ done: true, value: undefined as any });
-    }
+    if (this.readResolve) { const r = this.readResolve; this.readResolve = undefined; r({ done: true, value: undefined as any }); }
   }
 }
 
 // ========== SDK 会话 ==========
 
-export function createSession(sdk: any, config: CompanionConfig, abortController?: AbortController) {
+export function createSession(sdk: any, abortController?: AbortController) {
   const inputStream = new AsyncStream<any>();
 
-  // 排除 projectPath 之外的 CLAUDE.md（SDK 从 cwd 向上遍历时会发现父目录的 CLAUDE.md）
-  // SDK 的 isClaudeMdExcluded 将路径 \→/ 后用 picomatch.isMatch 精确匹配（大小写敏感）
-  // 因此同时添加原始大小写和小写版本，防止 Windows 盘符大小写不一致导致漏排
+  const claudeMdExcludes: string[] = [];
   const addExclude = (p: string) => {
     const n = p.replaceAll('\\', '/');
     claudeMdExcludes.push(n);
     const lower = n.toLowerCase();
     if (lower !== n) claudeMdExcludes.push(lower);
   };
-  const claudeMdExcludes: string[] = [];
-  let cursor = resolve(config.projectPath);
+  let cursor = resolve(CONFIG.projectPath);
   while (true) {
     const parent = dirname(cursor);
     if (parent === cursor) break;
     cursor = parent;
     addExclude(join(cursor, 'CLAUDE.md'));
   }
-  // 同时排除家目录 User 级 CLAUDE.md（~/.claude/CLAUDE.md）
   addExclude(join(homedir(), '.claude', 'CLAUDE.md'));
 
   const options = {
-    cwd: config.projectPath,
-    model: config.modelName || undefined,
+    cwd: CONFIG.projectPath,
+    model: CONFIG.modelName || undefined,
     abortController,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     disallowedTools: ['Bash', 'FileWrite', 'FileEdit', 'Write', 'Edit', 'Read', 'Glob', 'Grep', 'NotebookEdit', 'WebFetch', 'EnterWorktree', 'ExitWorktree', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', 'Skill'],
     autoCompactEnabled: true,
     includePartialMessages: true,
-    settingSources: config.settingSources,
+    settingSources: CONFIG.settingSources as any,
     claudeMdExcludes,
-    systemPrompt: [buildSystemPrompt(config.projectPath), SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
+    systemPrompt: [buildSystemPrompt(CONFIG.projectPath), SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
     stderr: (data: string | Buffer) => {
-      const text = typeof data === 'string' ? data : data.toString();
-      process.stderr.write(`[sdk] ${text}`);
+      process.stderr.write(`[sdk] ${typeof data === 'string' ? data : data.toString()}`);
     },
   } as Options;
 
-  // 思考模式（从 RuntimeState 读取，Web 端可动态切换）
-  const tm = RuntimeState.thinkingMode;
+  const tm = Thinking.mode;
   if (tm === 'disabled') {
     (options as any).thinking = { type: 'disabled' };
   } else if (tm === 'adaptive') {
     (options as any).thinking = { type: 'adaptive' };
-    if (RuntimeState.thinkingEffort) (options as any).effort = RuntimeState.thinkingEffort;
+    if (Thinking.effort) (options as any).effort = Thinking.effort;
   } else if (tm === 'fixed') {
-    (options as any).thinking = { type: 'enabled', budgetTokens: RuntimeState.maxThinkingTokens || 8000 };
-    if (RuntimeState.thinkingEffort) (options as any).effort = RuntimeState.thinkingEffort;
+    (options as any).thinking = { type: 'enabled', budgetTokens: Thinking.maxTokens || 8000 };
+    if (Thinking.effort) (options as any).effort = Thinking.effort;
   }
 
-  console.log(`[cc-companion] 项目目录: ${config.projectPath}`);
-  console.log(`[cc-companion] 会话将存储在: ${join(homedir(), '.claude', 'projects')}`);
-  console.log(`[cc-companion] 思考模式: ${tm}${tm === 'adaptive' ? ' (effort=' + RuntimeState.thinkingEffort + ')' : ''}${tm === 'fixed' ? ' (' + RuntimeState.maxThinkingTokens + ' tokens)' : ''}`);
-
   const queryIterator = sdk.query({ prompt: inputStream, options });
-  console.log('[cc-companion] SDK 会话已创建');
-
   return { inputStream, queryIterator };
 }
 
-// ========== 后台响应处理 ==========
-
-function sanitizePath(p: string): string {
-  return p.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
-}
-
-function trackSdkTask(name: string, input: any): void {
-  if (!input) return;
-  if (name === 'TaskCreate') {
-    const subject = input.subject || input.activeForm || '?';
-    const id = String(RuntimeState.sdkTasks.length + 1);
-    console.log(`[CCGUI_DEBUG] trackSdkTask 服务端 TaskCreate id=${id} subject="${subject}" input=${JSON.stringify(input)}`);
-    RuntimeState.sdkTasks.push({ id, subject, status: 'pending' });
-    console.log(`[CCGUI_DEBUG] trackSdkTask 服务端 当前任务列表: ${JSON.stringify(RuntimeState.sdkTasks)}`);
-  } else if (name === 'TaskUpdate') {
-    const tid = String(input.taskId || '');
-    const st = input.status || '';
-    console.log(`[CCGUI_DEBUG] trackSdkTask 服务端 TaskUpdate taskId=${tid} status=${st} input=${JSON.stringify(input)}`);
-    for (const t of RuntimeState.sdkTasks) {
-      if (String(t.id) === tid) { t.status = st; console.log(`[CCGUI_DEBUG] trackSdkTask 服务端 匹配成功 id=${tid} -> ${st}`); break; }
-    }
-    console.log(`[CCGUI_DEBUG] trackSdkTask 服务端 更新后任务列表: ${JSON.stringify(RuntimeState.sdkTasks)}`);
-  }
-}
+// ========== 响应处理 → onMessage ==========
 
 export function createResponseProcessor(
   queryIterator: AsyncIterable<any>,
-  cwd: string,
-  onMessage?: (msg: any) => void,
-  onInit?: (msg: any) => void,
-  onTasksChanged?: () => void,
+  onMessage: (msg: any) => void,
 ) {
-  let sessionId = 'pending';
   let processing = false;
-  let initData: any = null;
-  let currentModel = '';
-  let modelOutputStarted = false;
 
   async function process(): Promise<void> {
-    if (processing) return; // SDK AsyncIterator 持续消费 inputStream，不需二次启动
-    console.log('[cc-companion] processResponses 开始');
-    modelOutputStarted = false;
+    if (processing) return;
     processing = true;
     try {
       for await (const message of queryIterator) {
-        const msgType: string = message?.type || 'unknown';
-
-        if (msgType === 'system') {
-          if (message.subtype === 'compact_boundary') {
-            console.log('[cc-companion] 会话压缩完成');
-          }
-          if (message.subtype === 'init') {
-            initData = message;
-            // 记录当前模型名
-            if (message.model) currentModel = message.model;
-            onInit?.(message);
-            onMessage?.(message);
-          }
-          if (message.session_id && sessionId !== message.session_id) {
-            sessionId = message.session_id;
-            console.log(`[cc-companion] 会话 ID: ${sessionId}`);
-            const sessionFile = join(homedir(), '.claude', 'projects',
-              sanitizePath(cwd), `${sessionId}.jsonl`);
-            RuntimeState.sessionFilePath = sessionFile;
-            console.log(`[cc-companion] 会话文件: ${sessionFile}`);
-          }
-        }
-
-        if (msgType === 'assistant' || msgType === 'user' || msgType === 'stream_event') {
-          onMessage?.(message);
-          const content = message.message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text') {
-                if (!modelOutputStarted) { modelOutputStarted = true; console.log('[模型] 开始输出'); }
-              } else if (block.type === 'tool_use') {
-                console.log(`[tool] 调用: ${block.name}`);
-                // 追踪 SDK 任务：TaskCreate / TaskUpdate → RuntimeState.sdkTasks
-                trackSdkTask(block.name, block.input);
-                onTasksChanged?.();
-              }
-            }
-          }
-        }
-
-        if (msgType === 'result') {
-          if (currentModel) (message as any).model = currentModel;
-          const usage = message.usage;
-          const durationMs = message.duration_ms;
-          if (modelOutputStarted) {
-            const sec = durationMs ? (durationMs / 1000).toFixed(1) : '?';
-            console.log(`[模型] 输出完成 用时 ${sec}s`);
-            modelOutputStarted = false;
-          }
-          if (usage) {
-            const inputTokens = usage.input_tokens ?? 0;
-            const outputTokens = usage.output_tokens ?? 0;
-            const cacheRead = usage.cache_read_input_tokens ?? 0;
-            const cacheCreate = usage.cache_creation_input_tokens ?? 0;
-            const totalTokens = inputTokens + outputTokens;
-            const totalInput = inputTokens + cacheRead;
-            const cacheHitRate = totalInput > 0 ? (cacheRead / totalInput * 100).toFixed(0) : '0';
-            const durationSec = durationMs ? (durationMs / 1000).toFixed(1) : '?';
-            const fmt = (v: number) => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : String(v);
-            console.log(`[result] 耗时${durationSec}s | Token ${fmt(totalTokens)} | 缓存 ${fmt(cacheRead)}(${cacheHitRate}%) | 输出 ${fmt(outputTokens)}`);
-          } else {
-            const summary = message.subtype === 'success'
-              ? '执行成功' : `执行失败: ${message.errors?.join(', ') || 'unknown'}`;
-            console.log(`[result] ${summary}`);
-          }
-          onMessage?.(message);
-        }
+        onMessage(message);
       }
     } catch (err: any) {
-      console.error(`[cc-companion] SDK 响应处理错误: ${err.message}`);
+      console.error(`SDK 处理错误: ${err.message}`);
     }
     processing = false;
-    console.log('[cc-companion] processResponses 结束');
   }
 
   return { process };
