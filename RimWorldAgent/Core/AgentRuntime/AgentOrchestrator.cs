@@ -2,6 +2,7 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.CcbManager;
+using RimWorldAgent.Core.models;
 
 namespace RimWorldAgent.Core.AgentRuntime
 {
@@ -9,6 +10,10 @@ namespace RimWorldAgent.Core.AgentRuntime
 
     public static class AgentOrchestrator
     {
+        /// <summary>中断通知模板 — 送入 SDK 的 prompt 格式</summary>
+        public const string InterruptPromptPrefix = "## 紧急通知";
+        public const string InterruptPromptSuffix = "请立即处理以上事项。如有必要可以暂停游戏 (toggle_pause)。";
+
         /// <summary>真实游戏 TicksGame，由 SSE tick 事件自动更新</summary>
         public static int GameTick { get; set; }
 
@@ -97,8 +102,9 @@ namespace RimWorldAgent.Core.AgentRuntime
             if (CcbWs?.IsReady == true)
             {
                 _ = CcbWs.SendAbort();
-                // abort 后立即发送通知（companion 缓冲机制保证不丢失）
-                _ = CcbWs.SendChat("system", $"## 紧急通知\n{summary}\n请立即处理。如有必要可以暂停游戏 (toggle_pause)。");
+                // abort 后立即发送通知到 SDK（companion 缓冲 → 新 session 回放）
+                var prompt = $"{InterruptPromptPrefix}\n{summary}\n{InterruptPromptSuffix}";
+                _ = CcbWs.SendChat(ChatChannel.Bus, prompt);
             }
         }
 

@@ -206,9 +206,10 @@ namespace RimWorldAgent.Core.AgentRuntime
                 AgentOrchestrator.RequestInterrupt(summary);
                 _ = AgentOrchestrator.NotisAgent(summary);
                 ToolDispatcher.MarkNotifReceived();
-                // 推送 UI + 落盘
-                UIMessageBus.PushUiMessage(UiMessage.System(summary));
-                ConversationStore?.RecordSystemMessage(summary);
+                // 推送 UI + 落盘（与 SDK 文本一致）
+                var notifyText = $"{AgentOrchestrator.InterruptPromptPrefix}\n{summary}\n{AgentOrchestrator.InterruptPromptSuffix}";
+                UIMessageBus.PushUiMessage(UiMessage.User(notifyText));
+                ConversationStore?.RecordUserMessage(notifyText);
             };
         }
 

@@ -18,9 +18,9 @@ namespace RimWorldAgent.Core.AgentRuntime
             // 中断通知注入（如有）
             if (isInterrupted && !string.IsNullOrEmpty(AgentOrchestrator.InterruptSummary))
             {
-                sb.AppendLine("## 紧急通知");
+                sb.AppendLine(AgentOrchestrator.InterruptPromptPrefix);
                 sb.AppendLine(AgentOrchestrator.InterruptSummary);
-                sb.AppendLine("立即处理以上事项。如有必要可以暂停游戏 (toggle_pause)。");
+                sb.AppendLine(AgentOrchestrator.InterruptPromptSuffix);
                 sb.AppendLine();
                 AgentOrchestrator.InterruptSummary = "";
             }
