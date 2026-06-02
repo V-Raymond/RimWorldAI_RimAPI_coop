@@ -166,17 +166,21 @@ namespace RimWorldAgent.Core
     public class UiSdkTasks : UiMessage
     {
         public string type => "sdk-tasks";
-        public List<UiSdkTask> tasks { get; }
-        public UiSdkTasks(List<UiSdkTask> tasks) { this.tasks = tasks; }
+        [System.Text.Json.Serialization.JsonPropertyName("tasks")]
+        public List<UiSdkTask> Tasks { get; }
+        public UiSdkTasks(List<UiSdkTask> tasks) { Tasks = tasks; }
     }
 
     /// <summary>任务列表单项</summary>
     public class UiSdkTask
     {
-        public string id { get; }
-        public string subject { get; }
-        public string status { get; }
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
+        public string Id { get; }
+        [System.Text.Json.Serialization.JsonPropertyName("subject")]
+        public string Subject { get; }
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        public string Status { get; }
         public UiSdkTask(string id, string subject, string status)
-        { this.id = id; this.subject = subject; this.status = status; }
+        { Id = id; Subject = subject; Status = status; }
     }
 }
