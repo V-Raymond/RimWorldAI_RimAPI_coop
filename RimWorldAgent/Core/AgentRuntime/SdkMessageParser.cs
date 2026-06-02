@@ -46,7 +46,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                         {
                             if (block is SdkToolResultBlock tr)
                             {
-                                result.Add(UiMessage.ToolResult(tr.ToolUseId ?? "", tr.IsError, 0, tr.Content));
+                                var dur = AgentLoop.PeekToolDuration(tr.ToolUseId ?? "");
+                                result.Add(UiMessage.ToolResult(tr.ToolUseId ?? "", tr.IsError, dur ?? 0, tr.Content));
                                 UIMessageBus.RaiseToolResultRecorded(tr.ToolUseId ?? "", tr.IsError, tr.Content);
                             }
                         }

@@ -23,6 +23,12 @@ namespace RimWorldAgent.Core.AgentRuntime
         /// <summary>工具耗时暂存（toolId → ms），OnToolUse 写，OnToolResultRecorded 读+清理</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, double> _toolDurations = new();
 
+        /// <summary>读取工具耗时（不删除，用于 SdkMessageParser 读取并推送到 UI）</summary>
+        internal static double? PeekToolDuration(string toolId)
+        {
+            return _toolDurations.TryGetValue(toolId, out var d) ? d : (double?)null;
+        }
+
         /// <summary>CCB ↔ UIMessageBus 双向中继：SDK↔UiMessage 转换在 AgentCore 完成</summary>
         public static void WireUIMessageBus(CcbWebSocket ws)
         {

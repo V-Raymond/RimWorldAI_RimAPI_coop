@@ -10,7 +10,7 @@ namespace RimWorldMCP.Harmony
         {
             try
             {
-                Log.Message("[RimWorldMCP] 正在启动 MCP 服务...");
+                McpLog.Info("[RimWorldMCP] 正在启动 MCP 服务...");
                 McpServiceManager.Start();
                 Log.Message("[RimWorldMCP] MCP 服务启动成功");
             }

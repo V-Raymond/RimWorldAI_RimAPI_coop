@@ -236,14 +236,23 @@ namespace RimWorldAgent
         {
             lock (_lock)
             {
-                _toolCalls.Add(new ToolCallInfo
+                // 去重：stream_event 和 assistant 各发一次同 ID 的 tool_call，只保留一条
+                var existing = _toolCalls.FirstOrDefault(t => t.ItemId == toolId);
+                if (existing != null)
                 {
-                    ItemId = toolId,
-                    Name = toolName.Replace("mcp__agent__", "").Replace("mcp__rimworld__", ""),
-                    Meta = meta,
-                    Status = ToolStatus.Running,
-                });
-
+                    if (!string.IsNullOrEmpty(meta) && (string.IsNullOrEmpty(existing.Meta) || existing.Meta == "{}"))
+                        existing.Meta = meta;
+                }
+                else
+                {
+                    _toolCalls.Add(new ToolCallInfo
+                    {
+                        ItemId = toolId,
+                        Name = toolName.Replace("mcp__agent__", "").Replace("mcp__rimworld__", ""),
+                        Meta = meta,
+                        Status = ToolStatus.Running,
+                    });
+                }
             }
             OnChanged?.Invoke();
         }
