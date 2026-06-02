@@ -638,9 +638,7 @@ namespace RimWorldAgent
                 GUI.color = iconColor;
                 Widgets.Label(new Rect(rowRect.x + 2f, rowRect.y + 2f, 16f, 16f), icon);
 
-                string label = item.Status == "in_progress" ? $"[进行中] {item.Subject}"
-                    : item.Status == "completed" ? item.Subject
-                    : item.Subject;
+                string label = item.Subject;
                 GUI.color = textColor;
                 Widgets.Label(new Rect(rowRect.x + 20f, rowRect.y + 2f, rowRect.width - 22f, 16f),
                     label ?? "");
