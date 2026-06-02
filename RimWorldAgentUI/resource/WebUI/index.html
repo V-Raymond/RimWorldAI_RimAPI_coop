@@ -794,11 +794,15 @@
     console.log('[CCGUI_DEBUG] renderSdkTasks 任务数=' + sdkTasks.length + ' 进行中=' + pending + ' 列表=' + JSON.stringify(sdkTasks));
     taskCountEl.textContent = pending;
     sdkTaskListEl.innerHTML = '';
-    for (var i = 0; i < sdkTasks.length; i++) {
-      var t = sdkTasks[i];
+    // 已完成排最后
+    var sorted = sdkTasks.slice().sort(function(a, b) {
+      return (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0);
+    });
+    for (var i = 0; i < sorted.length; i++) {
+      var t = sorted[i];
       var div = document.createElement('div');
       div.className = 'sdk-task-item' + (t.status === 'completed' ? ' completed' : '');
-      var icon = t.status === 'in_progress' ? '进行' : t.status === 'completed' ? '完成' : '待办';
+      var icon = t.status === 'in_progress' ? '▶' : t.status === 'completed' ? '✓' : '○';
       var cls = 'task-status ' + (t.status === 'in_progress' ? 'in_progress' : t.status === 'completed' ? 'completed' : 'pending');
       div.innerHTML = '<span class="' + cls + '">' + icon + '</span>'
         + '<span class="task-subject" title="' + esc(t.subject) + '">' + esc(t.subject) + '</span>';
