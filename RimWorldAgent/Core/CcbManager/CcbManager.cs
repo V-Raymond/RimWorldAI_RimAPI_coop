@@ -182,16 +182,9 @@ namespace RimWorldAgent.Core.CcbManager
                 else
                 {
                     var pid = _process.Id;
-                    CoreLog.Info($"[CcbManager] 正在关闭 CCB (PID={pid})...");
-                    // 尝试优雅退出：关 stdin 让 Node.js 自然结束
-                    try { _process.StandardInput.Close(); } catch (Exception ex) { CoreLog.Info($"[CcbManager] 关闭 stdin 失败 (可忽略): {ex.Message}"); }
-                    var exited = _process.WaitForExit(3000);
-                    if (!exited)
-                    {
-                        CoreLog.Info($"[CcbManager] 超时 3s，Kill CCB (PID={pid})");
-                        _process.Kill();
-                        _process.WaitForExit(5000);
-                    }
+                    CoreLog.Info($"[CcbManager] Kill CCB (PID={pid})");
+                    _process.Kill();
+                    _process.WaitForExit(5000);
                     CoreLog.Info($"[CcbManager] CCB 已关闭 (PID={pid})");
                 }
             }
