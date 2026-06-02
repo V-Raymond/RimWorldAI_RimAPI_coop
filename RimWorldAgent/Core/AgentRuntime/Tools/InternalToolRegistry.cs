@@ -30,6 +30,10 @@ namespace RimWorldAgent.Core.AgentRuntime
             Register(new Tool_SetToolResultSuffix());
             Register(new Tool_ReadMemory());
             Register(new Tool_UpdateMemory());
+            Register(new Tool_TaskCreate());
+            Register(new Tool_TaskUpdate());
+            Register(new Tool_TaskList());
+            Register(new Tool_TaskGet());
             CoreLog.Info($"[InternalToolRegistry] 注册 {_tools.Count} 个内部工具");
         }
 

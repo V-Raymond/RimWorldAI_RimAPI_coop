@@ -10,24 +10,13 @@ namespace RimWorldAgent.Core.AgentRuntime
     /// <summary>Tool 调度：状态推送 + 模式提醒后缀 + 任务追踪。</summary>
     public static class ToolDispatcher
     {
-        // ===== SDK 任务追踪 =====
+        // ===== SDK 任务追踪（通过内部工具 task_create/task_update/task_list/task_get 实现）=====
 
-        public class TaskItem
-        {
-            public string Id { get; set; } = "";
-            public string Subject { get; set; } = "";
-            public string Status { get; set; } = "pending";
-        }
+        public static int PendingTaskCount => TaskStore.PendingCount;
 
-        private static readonly List<TaskItem> _tasks = new();
-        public static int PendingTaskCount => _tasks.Count;
+        public static List<TaskItem> TasksSnapshot() => TaskStore.GetAll();
 
-        public static List<TaskItem> TasksSnapshot()
-        {
-            lock (_tasks) return new List<TaskItem>(_tasks);
-        }
-
-        public static void ResetTaskCount() { lock (_tasks) _tasks.Clear(); }
+        public static void ResetTaskCount() => TaskStore.Clear();
         public static void ResetNotifCount() => _notifReceivedCount = 0;
         public static void ResetActPauseCount()
         {
@@ -119,20 +108,19 @@ namespace RimWorldAgent.Core.AgentRuntime
             _taskRemind = new Reminder("任务未完成", TaskCheckInterval,
                 () =>
                 {
-                    List<TaskItem> copy;
-                    lock (_tasks) copy = new List<TaskItem>(_tasks);
+                    var copy = TaskStore.GetPending();
                     var lines = new List<string>();
                     foreach (var t in copy)
                     {
                         lines.Add($"  [{t.Status}] {t.Subject}");
                         if (lines.Count >= 5) break;
                     }
-                    return $"\n\n<system-reminder>\n当前 {copy.Count} 个任务未完成：\n{string.Join("\n", lines)}\n完成的任务请用 TaskUpdate 更新状态。\n</system-reminder>";
+                    return $"\n\n<system-reminder>\n当前 {copy.Count} 个任务未完成：\n{string.Join("\n", lines)}\n完成的任务请用 task_update 更新状态。\n</system-reminder>";
                 },
-                () => { lock (_tasks) return _tasks.Count > 0; });
+                () => TaskStore.PendingCount > 0);
 
             _taskToolRemind = new Reminder("未使用 task 工具", TaskToolRemindInterval,
-                () => $"\n\n<system-reminder>\n你已连续 {TaskToolRemindInterval}+ 轮工具调用未使用 TaskCreate / TaskUpdate。建议调用 TaskCreate 制定任务计划、跟踪执行进度。完成后用 TaskUpdate(status=\"completed\") 标记。\n</system-reminder>",
+                () => $"\n\n<system-reminder>\n你已连续 {TaskToolRemindInterval}+ 轮工具调用未使用 task_create / task_update。建议调用 task_create 制定任务计划、跟踪执行进度。完成后用 task_update(status=\"completed\") 标记。\n</system-reminder>",
                 () => true,
                 () => { });  // 无额外动作，计数在 BuildModeSuffixAsync 中清零
 
@@ -150,32 +138,11 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         public static void TrackToolUse(string toolName, string inputJson)
         {
-            if (string.IsNullOrEmpty(inputJson)) return;
             try
             {
-                using var doc = JsonDocument.Parse(inputJson);
-                var input = doc.RootElement;
-
-                if (toolName.EndsWith("TaskCreate"))
-                {
+                // 内部任务工具使用 → 重置提醒计数器（实际任务操作由 TaskStore 处理）
+                if (toolName is "task_create" or "task_update" or "task_list" or "task_get")
                     _taskToolRemind!.Count = 0;
-                    var subj = input.TryGetProperty("subject", out var s) ? s.GetString() ?? "?" : "?";
-                    lock (_tasks)
-                    {
-                        var id = (_tasks.Count + 1).ToString();
-                        _tasks.Add(new TaskItem { Id = id, Subject = subj, Status = "pending" });
-                    }
-                }
-                else if (toolName.EndsWith("TaskUpdate"))
-                {
-                    _taskToolRemind!.Count = 0;
-                    var tid = input.TryGetProperty("taskId", out var ti) ? ti.GetString() ?? "" : "";
-                    var st = input.TryGetProperty("status", out var ts) ? ts.GetString() ?? "" : "";
-                    if (st == "completed" || st == "deleted")
-                        lock (_tasks) _tasks.RemoveAll(t => t.Id == tid);
-                    else
-                        lock (_tasks) { foreach (var t in _tasks) if (t.Id == tid) { t.Status = st; break; } }
-                }
 
                 // 工具输出提醒：非只读工具视为"有效产出"，清零计数器
                 if (!toolName.StartsWith("get_") && !toolName.StartsWith("read_") && !toolName.StartsWith("list_"))
@@ -185,7 +152,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                 if (toolName == "get_world_summary")
                     _worldSummaryRemind!.Count = 0;
             }
-            catch (Exception ex) { CoreLog.Info($"[ToolDispatcher] 任务追踪解析失败 ({toolName}): {ex.Message}"); }
+            catch (Exception ex) { CoreLog.Info($"[ToolDispatcher] 工具追踪异常 ({toolName}): {ex.Message}"); }
         }
 
         public static async Task HandleAsync(
