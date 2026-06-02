@@ -197,10 +197,12 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         private static void PushInitialBudget()
         {
+            var db = TokenUsageTracker.Db;
+            if (db == null) return; // 静态构造器可能在 Db 注入前被触发（beforefieldinit），静默跳过
             UIMessageBus.PushUiMessage(UiMessage.BudgetStatus(
-                TokenUsageTracker.TotalAllTokens, BudgetLimit, "Idle",
-                TokenUsageTracker.TotalCacheReadTokens, TokenUsageTracker.TotalInputTokens,
-                TokenUsageTracker.TotalCacheCreateTokens));
+                db.TotalAllTokens, BudgetLimit, "Idle",
+                db.TotalCacheReadTokens, db.TotalInputTokens,
+                db.TotalCacheCreateTokens));
         }
 
         /// <summary>MCP 游戏事件 → 按级别分流：Critical/Warning 中断，Info/Silent 仅 suffix</summary>

@@ -98,10 +98,10 @@ namespace RimWorldAgent.Core
 
         // ===== 生命周期 =====
 
-        public static void Start(int port = 19999)
+        public static void Start(string host = "0.0.0.0", int port = 19999)
         {
             if (_server != null) return;
-            _server = new WebSocketServer($"ws://0.0.0.0:{port}");
+            _server = new WebSocketServer($"ws://{host}:{port}");
             _server.Start(socket =>
             {
                 var id = socket.ConnectionInfo.Id;

@@ -85,7 +85,7 @@ namespace RimWorldAgent
 
             // 启动 UIMessageBus（Web UI 和游戏内 Dialog 的 WS 通信总线）
             var bridgePort = 19999;
-            UIMessageBus.Start(bridgePort);
+            UIMessageBus.Start(port: bridgePort);
             Console.WriteLine($"[Core] UIMessageBus: ws://0.0.0.0:{bridgePort}");
 
             // 创建 SQLite 会话存储
