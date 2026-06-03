@@ -40,17 +40,20 @@ namespace RimWorldAgent
 
         public static void Prefix_ClearAllMapsAndWorld()
         {
-            Log.Message("[agent-harmony] MemoryUtility.ClearAllMapsAndWorld → 关闭 Agent");
+            SafeLog.Info("[agent-harmony] MemoryUtility.ClearAllMapsAndWorld → 关闭 Agent");
             try
             {
                 Current.Game?.GetComponent<GameComponent_RimWorldAgent>()?.ShutdownEngine();
-                SafeLog.Flush();
                 CcbManager.KillStaleProcesses();
-                Log.Message("[agent-harmony] 关闭完成");
+                SafeLog.Info("[agent-harmony] 关闭完成");
             }
             catch (Exception ex)
             {
-                Log.Error($"[agent-harmony] 关闭异常: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                SafeLog.Error($"[agent-harmony] 关闭异常: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            }
+            finally
+            {
+                SafeLog.Flush();
             }
         }
     }
