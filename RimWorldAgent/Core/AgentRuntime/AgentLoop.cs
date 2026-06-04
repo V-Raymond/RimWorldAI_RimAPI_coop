@@ -229,6 +229,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                 if (evt.Level >= EventLevel.Warning)
                 {
                     // Critical / Warning → 立即中断 + UI + DB
+                    CoreLog.Info($"[event] 触发 RequestInterrupt: {summary}");
                     AgentOrchestrator.RequestInterrupt(summary);
                     var notifyText = $"{AgentOrchestrator.InterruptPromptPrefix}\n{summary}\n{AgentOrchestrator.InterruptPromptSuffix}";
                     UIMessageBus.PushUiMessage(UiMessage.User(notifyText));

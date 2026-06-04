@@ -260,7 +260,7 @@ namespace RimWorldMCP.Tools
                         pos_z = d.PosZ
                     })
                 });
-                SimpleMspServer.McpServiceHost.Instance?.SendEvent("game/trapped", payload);
+                McpServiceManager.Host?.SendEvent("game/trapped", payload);
             }
             catch (Exception ex) { McpLog.Warn($"[TrappedColonistTracker] SSE 推送失败: {ex.Message}"); }
         }

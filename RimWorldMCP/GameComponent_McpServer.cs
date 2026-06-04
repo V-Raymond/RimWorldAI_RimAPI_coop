@@ -78,7 +78,7 @@ namespace RimWorldMCP
             {
                 var tick = Find.TickManager?.TicksGame ?? 0;
                 var json = System.Text.Json.JsonSerializer.Serialize(new { type = "tick", tick });
-                SimpleMspServer.McpServiceHost.Instance?.SendEvent("game/tick", json);
+                McpServiceManager.Host?.SendEvent("game/tick", json);
             }
             catch (Exception ex) { McpLog.Warn($"tick 推送失败: {ex}"); }
         }

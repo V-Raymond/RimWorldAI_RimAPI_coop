@@ -104,7 +104,16 @@ namespace RimWorldMCP.Harmony
                     evt.Tick,
                     level = (int)level
                 });
-                SimpleMspServer.McpServiceHost.Instance?.SendEvent("game/notification", sseJson);
+                var host = McpServiceManager.Host;
+                if (host != null)
+                {
+                    host.SendEvent("game/notification", sseJson);
+                    McpLog.Info($"[NotificationBus] SSE 已推送: type={n.Type} level={level}");
+                }
+                else
+                {
+                    McpLog.Warn($"[NotificationBus] SSE 推送跳过: McpServiceManager.Host 为 null (MCP服务未启动)");
+                }
             }
             catch (Exception ex) { McpLog.Warn($"[NotificationBus] SSE 推送失败: {ex.Message}"); }
         }

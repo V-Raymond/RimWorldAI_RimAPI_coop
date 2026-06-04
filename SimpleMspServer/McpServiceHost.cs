@@ -30,7 +30,6 @@ namespace SimpleMspServer
         public int Port => _port;
         public string Host => _host;
         public bool IsRunning => _listener != null;
-        public static McpServiceHost? Instance { get; private set; }
 
         public McpServiceHost(int port = 9877, string host = "localhost", IMspLog? log = null)
         {
@@ -45,6 +44,11 @@ namespace SimpleMspServer
         public void SendEvent(string method, string jsonData)
         {
             var count = _sessions.Count;
+            if (count == 0)
+            {
+                _log.Warn($"SendEvent: method={method}, 无活跃 session，通知将丢失！jsonLen={jsonData.Length}");
+                return;
+            }
             var sessionIds = _sessions.Keys.Select(k => k.Substring(0, Math.Min(k.Length, 8)));
             _log.Info($"SendEvent: method={method}, sessions={count}, ids=[{string.Join(",", sessionIds)}], jsonLen={jsonData.Length}");
             foreach (var kv in _sessions)
@@ -54,7 +58,6 @@ namespace SimpleMspServer
         public void Start()
         {
             if (IsRunning) return;
-            Instance = this;
             try
             {
                 _cts = new CancellationTokenSource();
@@ -86,7 +89,6 @@ namespace SimpleMspServer
             _sessions.Clear();
             _cts?.Dispose();
             _cts = null;
-            Instance = null;
         }
 
         // ===== HTTP =====

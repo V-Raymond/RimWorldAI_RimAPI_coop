@@ -11,6 +11,7 @@ namespace RimWorldMCP
         private static SimpleMspServer.McpServiceHost? _host;
 
         public static ToolRegistry? ToolRegistry { get; private set; }
+        public static SimpleMspServer.McpServiceHost? Host => _host;
         public static bool IsRunning => _host?.IsRunning ?? false;
 
         private const int DefaultPort = 9877;

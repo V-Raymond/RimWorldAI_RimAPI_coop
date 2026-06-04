@@ -96,7 +96,7 @@ namespace RimWorldMCP.Tools
                         detail = i.Detail
                     })
                 });
-                SimpleMspServer.McpServiceHost.Instance?.SendEvent("game/deterioration", payload);
+                McpServiceManager.Host?.SendEvent("game/deterioration", payload);
             }
             catch (Exception ex) { McpLog.Warn($"[DeteriorationTracker] 推送腐坏警告失败: {ex.Message}"); }
 
