@@ -10,6 +10,7 @@
 
   <!-- 网格查询 -->
   <RimWorldMCP_Tool_get_tile_detail>坐标详情</RimWorldMCP_Tool_get_tile_detail>
+  <RimWorldMCP_Tool_observe_area>观察标记</RimWorldMCP_Tool_observe_area>
   <RimWorldMCP_Tool_get_tile_grid_by_chunk>网格地图(分块)</RimWorldMCP_Tool_get_tile_grid_by_chunk>
   <RimWorldMCP_Tool_get_tile_grid_by_pos>网格地图(坐标)</RimWorldMCP_Tool_get_tile_grid_by_pos>
   <RimWorldMCP_Tool_list_chunks>Chunk列表</RimWorldMCP_Tool_list_chunks>

@@ -25,7 +25,9 @@ namespace RimWorldMCP.Tools
                 var map = Find.CurrentMap;
                 if (map == null) return ToolResult.Error("当前无地图");
 
-                var plans = map.planManager.AllPlans;
+                var plans = map.planManager.AllPlans
+                    .Where(p => !(p.RenamableLabel?.StartsWith("[AI]") ?? false))
+                    .ToList();
                 if (plans.Count == 0)
                     return ToolResult.Success("## 规划\n当前无规划标记。");
 

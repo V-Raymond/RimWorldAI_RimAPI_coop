@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using RimWorld;
 using RimWorldMCP.Constants;
 using RimWorldMCP.Harmony;
+using RimWorldMCP.MapRendering;
 using RimWorldMCP.Tools;
 using Verse;
 
@@ -54,6 +55,7 @@ namespace RimWorldMCP
             McpOssUploader.ProcessPendingUploads();
             McpCommandQueue.ProcessDeferredCleanup();
             CameraHelper.AutoTrackColonistsTick();
+            AiObservationOverlay.Tick(Find.CurrentMap);
 
             // 每 60 tick (~1s) 推送一次游戏状态到 MCP 客户端
             var currentTick = Find.TickManager?.TicksGame ?? 0;
