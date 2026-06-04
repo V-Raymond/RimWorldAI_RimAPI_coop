@@ -18,6 +18,6 @@ namespace RimWorldAgent.Core.Data
         public long CacheReadTokens { get; set; }
         public long CacheCreateTokens { get; set; }
         public int RequestCount { get; set; }
-        public long TotalTokens => InputTokens + OutputTokens + CacheReadTokens + CacheCreateTokens;
+        public long TotalTokens => InputTokens + OutputTokens;
     }
 }

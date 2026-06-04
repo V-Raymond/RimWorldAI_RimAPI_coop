@@ -30,7 +30,7 @@ namespace RimWorldAgent
         long IDbStore.TotalOutputTokens => TotalOutputTokens;
         long IDbStore.TotalCacheReadTokens => TotalCacheReadTokens;
         long IDbStore.TotalCacheCreateTokens => TotalCacheCreateTokens;
-        long IDbStore.TotalAllTokens => TotalInputTokens + TotalOutputTokens + TotalCacheReadTokens + TotalCacheCreateTokens;
+        long IDbStore.TotalAllTokens => TotalInputTokens + TotalOutputTokens;
         int IDbStore.TotalRequests => TotalRequests;
         int IDbStore.TotalToolSuccess => TotalToolSuccess;
         int IDbStore.TotalToolFailure => TotalToolFailure;

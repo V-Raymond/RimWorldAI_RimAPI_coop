@@ -33,9 +33,7 @@ namespace RimWorldAgent.Core.Data
         long IDbStore.TotalCacheReadTokens => Interlocked.Read(ref TotalCacheReadTokens);
         long IDbStore.TotalCacheCreateTokens => Interlocked.Read(ref TotalCacheCreateTokens);
         long IDbStore.TotalAllTokens => Interlocked.Read(ref TotalInputTokens)
-            + Interlocked.Read(ref TotalOutputTokens)
-            + Interlocked.Read(ref TotalCacheReadTokens)
-            + Interlocked.Read(ref TotalCacheCreateTokens);
+            + Interlocked.Read(ref TotalOutputTokens);
         int IDbStore.TotalRequests => TotalRequests;
         int IDbStore.TotalToolSuccess => TotalToolSuccess;
         int IDbStore.TotalToolFailure => TotalToolFailure;
