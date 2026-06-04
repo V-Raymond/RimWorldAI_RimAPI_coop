@@ -230,7 +230,10 @@
 | get_recommended_weapon | 按科技等级排名推荐武器（远程/近战） |
 | schedule_operation | 安排手术 |
 | plan_add / plan_list / plan_remove | 规划画板：画草图→查看→确认布局→真正建造 |
-| get_tile_grid / get_tile_detail | 查看地图 |
+| get_tile_grid_by_chunk / get_tile_grid_by_pos | 文本网格地图（分块/坐标） |
+| get_tile_detail | 坐标范围详情 |
+| list_chunks | Chunk列表 |
+| fertility_grid_by_pos / terrain_grid_by_pos / temperature_grid_by_pos / pollution_grid_by_pos | 专项网格（坐标） |
 | designate_mine / designate_plants_cut / designate_harvest | 资源采集 |
 | get_open_dialogs / select_dialog_option | 弹框拦截：读取选项并程序化选择 |
 | get_skills / active_skill | Agent 内部工具：查看可用技能/激活获取详细指南 |

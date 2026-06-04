@@ -8,9 +8,9 @@ using Verse;
 
 namespace RimWorldMCP.Tools
 {
-    public class Tool_TemperatureGrid : ITool
+    public class Tool_TemperatureGridByChunk : ITool
     {
-        public string Name => "temperature_grid";
+        public string Name => "temperature_grid_by_chunk";
         public string Description => "获取指定 chunk 的温度网格（分块压缩）。先用 list_chunks 获取 chunk_id 列表。";
         public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
         {

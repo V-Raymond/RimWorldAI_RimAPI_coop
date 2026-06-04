@@ -10,12 +10,17 @@
 
   <!-- 网格查询 -->
   <RimWorldMCP_Tool_get_tile_detail>坐标详情</RimWorldMCP_Tool_get_tile_detail>
-  <RimWorldMCP_Tool_get_tile_grid>网格地图</RimWorldMCP_Tool_get_tile_grid>
+  <RimWorldMCP_Tool_get_tile_grid_by_chunk>网格地图(分块)</RimWorldMCP_Tool_get_tile_grid_by_chunk>
+  <RimWorldMCP_Tool_get_tile_grid_by_pos>网格地图(坐标)</RimWorldMCP_Tool_get_tile_grid_by_pos>
   <RimWorldMCP_Tool_list_chunks>Chunk列表</RimWorldMCP_Tool_list_chunks>
-  <RimWorldMCP_Tool_fertility_grid>肥沃度图</RimWorldMCP_Tool_fertility_grid>
-  <RimWorldMCP_Tool_terrain_grid>地形图</RimWorldMCP_Tool_terrain_grid>
-  <RimWorldMCP_Tool_temperature_grid>温度图</RimWorldMCP_Tool_temperature_grid>
-  <RimWorldMCP_Tool_pollution_grid>污染图</RimWorldMCP_Tool_pollution_grid>
+  <RimWorldMCP_Tool_fertility_grid_by_chunk>肥沃度图(分块)</RimWorldMCP_Tool_fertility_grid_by_chunk>
+  <RimWorldMCP_Tool_fertility_grid_by_pos>肥沃度图(坐标)</RimWorldMCP_Tool_fertility_grid_by_pos>
+  <RimWorldMCP_Tool_terrain_grid_by_chunk>地形图(分块)</RimWorldMCP_Tool_terrain_grid_by_chunk>
+  <RimWorldMCP_Tool_terrain_grid_by_pos>地形图(坐标)</RimWorldMCP_Tool_terrain_grid_by_pos>
+  <RimWorldMCP_Tool_temperature_grid_by_chunk>温度图(分块)</RimWorldMCP_Tool_temperature_grid_by_chunk>
+  <RimWorldMCP_Tool_temperature_grid_by_pos>温度图(坐标)</RimWorldMCP_Tool_temperature_grid_by_pos>
+  <RimWorldMCP_Tool_pollution_grid_by_chunk>污染图(分块)</RimWorldMCP_Tool_pollution_grid_by_chunk>
+  <RimWorldMCP_Tool_pollution_grid_by_pos>污染图(坐标)</RimWorldMCP_Tool_pollution_grid_by_pos>
 
   <!-- 制造 -->
   <RimWorldMCP_Tool_list_recipes>配方列表</RimWorldMCP_Tool_list_recipes>

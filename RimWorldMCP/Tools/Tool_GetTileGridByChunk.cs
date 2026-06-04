@@ -1,24 +1,24 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using RimWorld;
 using RimWorldMCP.Compression;
 using RimWorldMCP.MapRendering;
 using Verse;
 
 namespace RimWorldMCP.Tools
 {
-    public class Tool_PollutionGrid : ITool
+    public class Tool_GetTileGridByChunk : ITool
     {
-        public string Name => "pollution_grid";
-        public string Description => "获取指定 chunk 的污染网格（分块压缩）。需要 Biotech DLC。先用 list_chunks 获取 chunk_id 列表。";
+        public string Name => "get_tile_grid_by_chunk";
+        public string Description => "获取指定 chunk 的文本化网格地图（分块压缩）。先用 list_chunks 获取矩形范围内的 chunk_id 列表，再逐个查询。";
         public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
         {
             type = "object",
             properties = new
             {
-                chunk_id = new { type = "string", description = "Chunk ID，格式 \"X_Z\"" }
+                chunk_id = new { type = "string", description = "Chunk ID，格式 \"X_Z\"，如 \"0_0\"。由 list_chunks 获取。" }
             },
             required = new[] { "chunk_id" }
         });
@@ -38,7 +38,6 @@ namespace RimWorldMCP.Tools
                 {
                     var map = Find.CurrentMap;
                     if (map == null) return ToolResult.Error("当前没有可用地图。");
-                    if (!ModsConfig.BiotechActive) return ToolResult.Error("需要 Biotech DLC 才能查询污染层。");
 
                     var settings = RimWorldMCPMod.Instance?.Settings;
                     int cw = settings?.ChunkWidth ?? 32;
@@ -47,8 +46,9 @@ namespace RimWorldMCP.Tools
 
                     var chunk = MapChunker.GetChunkByIndex(xIndex, zIndex, map.Size.x, map.Size.z, cw, ch);
                     var compressor = CompressorFactory.Create(method);
+                    var usedSymbols = new HashSet<char>();
+                    bool allFog = true;
 
-                    int polluted = 0, total = 0;
                     var rows = new char[chunk.Height][];
                     for (int z = 0; z < chunk.Height; z++)
                     {
@@ -56,26 +56,29 @@ namespace RimWorldMCP.Tools
                         for (int x = 0; x < chunk.Width; x++)
                         {
                             var pos = new IntVec3(chunk.MinX + x, 0, chunk.MinZ + z);
-                            var (symbol, _) = CellCharProviders.ForPollution(pos, map);
+                            var (symbol, _) = CellCharProviders.ForTileGrid(pos, map);
                             rows[z][x] = symbol;
-                            total++;
-                            if (symbol == 'P') polluted++;
+                            usedSymbols.Add(symbol);
+                            if (symbol != '█') allFog = false;
                         }
                     }
 
+                    chunk.IsAllFog = allFog;
                     chunk.CompressedData = compressor.Compress(rows, (chunk.XIndex, chunk.ZIndex));
 
                     var sb = new StringBuilder();
                     sb.AppendLine($"## {Name}  Chunk({chunk.XIndex},{chunk.ZIndex})  世界({chunk.MinX},{chunk.MinZ})-({chunk.MaxX},{chunk.MaxZ})  [{chunk.Width}x{chunk.Height}]");
-                    sb.AppendLine($"## 压缩: {compressor.Name}");
+                    sb.AppendLine($"## 压缩: {compressor.Name}  字典Hash: {SymbolDictionary.DictHash}");
+                    if (allFog) sb.AppendLine("## 全迷雾");
                     sb.AppendLine();
                     sb.AppendLine(chunk.CompressedData);
                     sb.AppendLine();
-                    sb.AppendLine($"## 图例  P污染  .干净  ?迷雾  | 污染率: {polluted}/{total} ({100 * polluted / total}%)");
+                    sb.AppendLine("## 图例");
+                    sb.AppendLine(SymbolDictionary.GetLegendString(usedSymbols));
 
                     return ToolResult.Success(sb.ToString().TrimEnd());
                 }
-                catch (Exception ex) { return ToolResult.Error($"污染查询失败: {ex.Message}"); }
+                catch (Exception ex) { return ToolResult.Error($"网格生成失败: {ex.Message}"); }
             });
         }
 

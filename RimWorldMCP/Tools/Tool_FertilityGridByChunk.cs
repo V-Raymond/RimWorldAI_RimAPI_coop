@@ -8,9 +8,9 @@ using Verse;
 
 namespace RimWorldMCP.Tools
 {
-    public class Tool_FertilityGrid : ITool
+    public class Tool_FertilityGridByChunk : ITool
     {
-        public string Name => "fertility_grid";
+        public string Name => "fertility_grid_by_chunk";
         public string Description => "获取指定 chunk 的肥沃度网格（分块压缩）。先用 list_chunks 获取 chunk_id 列表。";
         public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
         {
