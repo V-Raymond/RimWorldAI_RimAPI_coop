@@ -31,7 +31,8 @@ namespace RimWorldMCP.Tools
                 floor_defName = new { type = "string", description = "地板 DefName，可选" },
                 ignore_unreachable = new { type = "boolean", description = "跳过可达性检测（默认 false）" },
                 ignore_overwrite = new { type = "boolean", description = "跳过内部人造墙体冲突检测（默认 false）。默认会检查房间内部是否有其他人造墙体（坐标交叉错误），检测到则拒绝建造。设为 true 可强制覆盖。天然岩壁始终忽略。" },
-                check_plan = new { type = "boolean", description = "检查墙体位置是否在规划区域内（默认 true），传 false 跳过检测" }
+                check_plan = new { type = "boolean", description = "检查墙体位置是否在规划区域内（默认 true），传 false 跳过检测" },
+                skip_precheck = new { type = "boolean", description = "跳过放置可行性预检（默认 false）。默认会逐格检查 CanDesignateCell，任何位置不可放置则全部拒绝。设为 true 跳过预检，允许部分成功。" }
             },
             required = new[] { "pos_x", "pos_y", "end_x", "end_y" }
         });
@@ -70,6 +71,9 @@ namespace RimWorldMCP.Tools
             bool checkPlan = true;
             if (args.Value.TryGetProperty("check_plan", out var jCP) && jCP.ValueKind == JsonValueKind.False)
                 checkPlan = false;
+            bool skipPrecheck = false;
+            if (args.Value.TryGetProperty("skip_precheck", out var jSP) && jSP.ValueKind == JsonValueKind.True)
+                skipPrecheck = true;
 
             // 计算房间几何（不涉及游戏状态，可在任意线程执行）
             int minX = Math.Min(rawStartX, rawEndX);
@@ -304,6 +308,38 @@ namespace RimWorldMCP.Tools
                         bool anyReachable = wallPositions.Any(wp => colonists.Any(c => c.CanReach(new IntVec3(wp.x, 0, wp.y), PathEndMode.ClosestTouch, Danger.Deadly)));
                         if (!anyReachable)
                             return ToolResult.Error("殖民者无法到达房间建造位置，无法放置蓝图。请确保有路径连通或传 ignore_unreachable=true。");
+                    }
+
+                    // ===== 预检：所有墙体位置是否可放置蓝图（skip_precheck=true 跳过）=====
+                    if (!skipPrecheck)
+                    {
+                        var blockedWalls = new List<string>();
+                        foreach (var (wx, wy) in wallPositions)
+                        {
+                            var ipos = new IntVec3(wx, 0, wy);
+                            if (ipos.Fogged(map)) { blockedWalls.Add($"({wx},{wy}) 迷雾中不可见"); continue; }
+                            bool isDoorPos = doorPosSet.Contains((wx, wy)) && doorDes != null;
+                            // 共用墙跳过
+                            if (!isDoorPos && RoomGenUtility.IsWallAt(ipos, map)) continue;
+                            Designator_Build des = isDoorPos ? doorDes! : wallDes;
+                            var accept = des.CanDesignateCell(ipos);
+                            if (!accept.Accepted)
+                            {
+                                var reason = accept.Reason ?? "不可放置";
+                                blockedWalls.Add($"({wx},{wy}) {reason}");
+                            }
+                        }
+                        if (blockedWalls.Count > 0)
+                        {
+                            var preSb = new StringBuilder();
+                            preSb.AppendLine($"⚠ 预检失败：{blockedWalls.Count} 处墙体位置无法放置蓝图：");
+                            foreach (var b in blockedWalls.Take(10))
+                                preSb.AppendLine($"  - {b}");
+                            if (blockedWalls.Count > 10)
+                                preSb.AppendLine($"  ... 及其他 {blockedWalls.Count - 10} 处");
+                            preSb.Append("请调整坐标或清除障碍物后重试。");
+                            return ToolResult.Error(preSb.ToString().TrimEnd());
+                        }
                     }
 
                     // 放置墙体（已有墙体处跳过——共用墙，在门位置处替换为门）
