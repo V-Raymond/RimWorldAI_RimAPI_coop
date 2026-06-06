@@ -1,4 +1,5 @@
 /** 配置 — CLI 参数 + 环境变量 */
+import {EffortLevel} from "@anthropic-ai/claude-agent-sdk";
 
 export interface CompanionConfig {
   host: string;
@@ -10,9 +11,8 @@ export interface CompanionConfig {
 }
 
 export const Thinking = {
-  mode: 'default' as string,
-  effort: 'medium' as string,
-  maxTokens: 0 as number,
+  mode: 'adaptive' as string,
+  effort: 'high' as EffortLevel,
 };
 
 export const CONFIG: CompanionConfig = {

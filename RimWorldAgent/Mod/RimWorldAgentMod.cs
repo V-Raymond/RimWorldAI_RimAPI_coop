@@ -71,8 +71,8 @@ namespace RimWorldAgent
             listing.Label("模型名称 (如 claude-sonnet-4-6)");
             Settings.ModelName = listing.TextEntry(Settings.ModelName);
 
-            var modeLabels = new[] { "default (SDK 默认)", "disabled (禁用思考)", "adaptive (SDK 自控)", "fixed (固定预算)" };
-            var modeValues = new[] { "default", "disabled", "adaptive", "fixed" };
+            var modeLabels = new[] { "adaptive (引导深度)", "disabled (禁用思考)" };
+            var modeValues = new[] { "adaptive", "disabled" };
             var modeIdx = Array.IndexOf(modeValues, Settings.ThinkingMode);
             if (modeIdx < 0) modeIdx = 0;
             if (listing.ButtonText($"思考模式: {modeLabels[modeIdx]}"))
@@ -81,26 +81,15 @@ namespace RimWorldAgent
                 Settings.ThinkingMode = modeValues[modeIdx];
             }
 
-            if (Settings.ThinkingMode == "adaptive" || Settings.ThinkingMode == "fixed")
+            listing.Gap(4f);
+            var effortLabels = new[] { "low (低)", "medium (中)", "high (高)", "xhigh (极高)", "max (最大)" };
+            var effortValues = new[] { "low", "medium", "high", "xhigh", "max" };
+            var effortIdx = Array.IndexOf(effortValues, Settings.ThinkingEffort);
+            if (effortIdx < 0) effortIdx = 2; // 默认 "high"
+            if (listing.ButtonText($"思考力度: {effortLabels[effortIdx]}"))
             {
-                listing.Gap(4f);
-                var effortLabels = new[] { "medium (中)", "high (高)", "xhigh (极高)", "max (最大)" };
-                var effortValues = new[] { "medium", "high", "xhigh", "max" };
-                var effortIdx = Array.IndexOf(effortValues, Settings.ThinkingEffort);
-                if (effortIdx < 0) effortIdx = 0;
-                if (listing.ButtonText($"思考力度: {effortLabels[effortIdx]}"))
-                {
-                    effortIdx = (effortIdx + 1) % effortValues.Length;
-                    Settings.ThinkingEffort = effortValues[effortIdx];
-                }
-            }
-
-            if (Settings.ThinkingMode == "fixed")
-            {
-                listing.Label("最大思考 Token (0=默认 8000)");
-                var mtkStr = listing.TextEntry(Settings.MaxThinkingTokens.ToString());
-                if (int.TryParse(mtkStr, out int mtk) && mtk >= 0)
-                    Settings.MaxThinkingTokens = mtk;
+                effortIdx = (effortIdx + 1) % effortValues.Length;
+                Settings.ThinkingEffort = effortValues[effortIdx];
             }
 
             // ==================== Token 预算 ====================

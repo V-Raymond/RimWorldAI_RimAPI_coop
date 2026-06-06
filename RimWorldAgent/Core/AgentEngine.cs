@@ -29,9 +29,8 @@ namespace RimWorldAgent.Core.AgentRuntime
         public string PlanSpeed { get; set; } = "paused";
         public bool WaitForGame { get; set; } = false;
         public long TokenBudgetLimit { get; set; }
-        public string ThinkingMode { get; set; } = "default";
-        public string ThinkingEffort { get; set; } = "medium";
-        public int MaxThinkingTokens { get; set; }
+        public string ThinkingMode { get; set; } = "adaptive";
+        public string ThinkingEffort { get; set; } = "high";
     }
 
     /// <summary>Agent 引擎 — CCB 生命周期 + WS + MCP + 调度循环。EXE/MOD 共享。</summary>
@@ -160,8 +159,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     _ccbWs = new CcbWebSocket(_cfg.CcbWsUrl, _cfg.CcbToken ?? "")
                     {
                         ThinkingMode = _cfg.ThinkingMode,
-                        ThinkingEffort = _cfg.ThinkingEffort,
-                        MaxThinkingTokens = _cfg.MaxThinkingTokens
+                        ThinkingEffort = _cfg.ThinkingEffort
                     };
                     var wsOk = await _ccbWs.ConnectAsync();
                     _logInfo($"[AgentEngine] WS ConnectAsync = {wsOk}");
@@ -208,8 +206,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     _ccbWs = new CcbWebSocket(_cfg.CcbWsUrl, _cfg.CcbToken ?? "")
                     {
                         ThinkingMode = _cfg.ThinkingMode,
-                        ThinkingEffort = _cfg.ThinkingEffort,
-                        MaxThinkingTokens = _cfg.MaxThinkingTokens
+                        ThinkingEffort = _cfg.ThinkingEffort
                     };
                     _ = _ccbWs.ConnectAsync().ContinueWith(t =>
                     {

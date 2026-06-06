@@ -72,9 +72,8 @@ namespace RimWorldAgent.Core
 
         public class ChatThinking
         {
-            public string Mode = "default";
-            public string Effort = "medium";
-            public int Tokens;
+            public string Mode = "adaptive";
+            public string Effort = "high";
         }
 
         public static event Action<string, ChatThinking?>? OnChat;
@@ -193,9 +192,8 @@ namespace RimWorldAgent.Core
             if (!root.TryGetProperty("thinking", out var th)) return null;
             return new ChatThinking
             {
-                Mode = th.TryGetProperty("mode", out var m) ? m.GetString() ?? "default" : "default",
-                Effort = th.TryGetProperty("effort", out var e) ? e.GetString() ?? "medium" : "medium",
-                Tokens = th.TryGetProperty("tokens", out var t) && t.TryGetInt32(out var n) ? n : 0,
+                Mode = th.TryGetProperty("mode", out var m) ? m.GetString() ?? "adaptive" : "adaptive",
+                Effort = th.TryGetProperty("effort", out var e) ? e.GetString() ?? "high" : "high",
             };
         }
     }

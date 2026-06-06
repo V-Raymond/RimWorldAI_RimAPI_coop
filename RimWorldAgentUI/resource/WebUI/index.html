@@ -654,18 +654,13 @@
       <span class="meta-item">Tools <span class="meta-val" id="meta-tools">0</span></span>
       <span class="scroll-toggle" id="scroll-toggle" onclick="toggleAutoScroll()" title="自动滚动吸附"><span class="st-dot"></span> 吸附</span>
       <div class="think-dd" id="think-dd">
-        <span class="dd-btn" id="think-label">💭 默认 ▾</span>
+        <span class="dd-btn" id="think-label">💭 引导:高 ▾</span>
         <div class="dd-menu" id="think-menu">
-          <div class="dd-item" data-m="default">默认<span class="dd-check">✓</span></div>
-          <div class="dd-item" data-m="disabled">禁用思考<span class="dd-check">✓</span></div>
-          <div class="dd-item" data-m="adaptive">引导深度<span class="dd-check">✓</span></div>
+          <div class="dd-item on selected" data-m="adaptive">引导深度<span class="dd-check">✓</span></div>
           <div class="dd-sub" id="effort-sub">
-            <span data-e="medium">中</span><span data-e="high">高</span><span data-e="xhigh">极高</span><span data-e="max">最大</span>
+            <span data-e="low">低</span><span data-e="medium">中</span><span data-e="high" class="on">高</span><span data-e="xhigh">极高</span><span data-e="max">最大</span>
           </div>
-          <div class="dd-item" data-m="fixed">固定 Token<span class="dd-check">✓</span></div>
-          <div class="dd-sub" id="token-sub">
-            <input id="token-input" type="number" min="1000" max="32000" step="1000" value="8000" placeholder="Token数">
-          </div>
+          <div class="dd-item" data-m="disabled">禁用思考<span class="dd-check">✓</span></div>
         </div>
       </div>
     </div>
@@ -730,11 +725,8 @@
   const thinkLabel = document.getElementById('think-label');
   const thinkMenu = document.getElementById('think-menu');
   const effortSub = document.getElementById('effort-sub');
-  const tokenSub = document.getElementById('token-sub');
-  const tokenInput = document.getElementById('token-input');
-  var currentMode = 'default';
-  var currentEffort = 'medium';
-  var currentTokens = 8000;
+  var currentMode = 'adaptive';
+  var currentEffort = 'high';
   var toolCount = 0;
 
   // 按钮：开关菜单
@@ -754,9 +746,8 @@
     item.classList.add('on', 'selected');
     // 子面板
     effortSub.style.display = m === 'adaptive' ? 'block' : 'none';
-    tokenSub.style.display = m === 'fixed' ? 'block' : 'none';
     // 标签
-    var labels = { default: '默认', disabled: '禁用', adaptive: '引导:' + currentEffort, fixed: '固定' + (currentTokens/1000) + 'K' };
+    var labels = { adaptive: '引导:' + currentEffort, disabled: '禁用' };
     thinkLabel.innerHTML = '💭 ' + (labels[m] || m) + ' ▾';
     // 发送
   });
@@ -771,13 +762,7 @@
     currentEffort = t.dataset.e;
     thinkLabel.innerHTML = '💭 引导:' + currentEffort + ' ▾';
   });
-  effortSub.querySelector('span[data-e="medium"]').classList.add('on');
-
-  // token 输入
-  tokenInput.addEventListener('change', function() {
-    currentTokens = parseInt(tokenInput.value) || 8000;
-    thinkLabel.innerHTML = '💭 固定' + (currentTokens/1000) + 'K ▾';
-  });
+  effortSub.querySelector('span[data-e="high"]').classList.add('on');
 
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1733,7 +1718,6 @@
     const text = inputEl.value.trim();
     if (!text || !connected) return;
     var thinking = { mode: currentMode, effort: currentEffort };
-    if (currentMode === 'fixed') thinking.tokens = currentTokens;
     ws.send(JSON.stringify({ type: 'chat', text: text, thinking: thinking }));
     inputEl.value = '';
     adjustHeight();

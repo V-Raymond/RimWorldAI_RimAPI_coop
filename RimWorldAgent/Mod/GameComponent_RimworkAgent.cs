@@ -76,9 +76,8 @@ namespace RimWorldAgent
                     CcbDir = ccbDir,
                     PlanSpeed = settings?.PlanSpeed ?? "paused",
                     TokenBudgetLimit = settings?.TokenBudgetLimit ?? 0,
-                    ThinkingMode = settings?.ThinkingMode ?? "default",
-                    ThinkingEffort = settings?.ThinkingEffort ?? "medium",
-                    MaxThinkingTokens = settings?.MaxThinkingTokens ?? 0,
+                    ThinkingMode = settings?.ThinkingMode ?? "adaptive",
+                    ThinkingEffort = settings?.ThinkingEffort ?? "high",
                 };
 
                 _engine = new AgentEngine(cfg, dbStore, gameState,

@@ -34,12 +34,10 @@ public class CcbWebSocket : IDisposable
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
-    /// <summary>思考模式：default / disabled / adaptive / fixed</summary>
-    public string ThinkingMode { get; set; } = "default";
-    /// <summary>思考力度：low / medium / high</summary>
-    public string ThinkingEffort { get; set; } = "medium";
-    /// <summary>最大思考 Token 数（0 = 默认）</summary>
-    public int MaxThinkingTokens { get; set; }
+    /// <summary>思考模式：adaptive / disabled</summary>
+    public string ThinkingMode { get; set; } = "adaptive";
+    /// <summary>思考力度：low / medium / high / xhigh / max</summary>
+    public string ThinkingEffort { get; set; } = "high";
 
     public CcbClientState State => _state;
     public bool IsConnected => _state >= CcbClientState.Connected;
@@ -133,12 +131,11 @@ public class CcbWebSocket : IDisposable
     {
         var mode = thinking?.Mode ?? ThinkingMode;
         var effort = thinking?.Effort ?? ThinkingEffort;
-        var tokens = thinking?.Tokens ?? MaxThinkingTokens;
-        if (string.IsNullOrEmpty(mode)) mode = "default";
-        if (string.IsNullOrEmpty(effort)) effort = "medium";
+        if (string.IsNullOrEmpty(mode)) mode = "adaptive";
+        if (string.IsNullOrEmpty(effort)) effort = "high";
 
         CoreLog.Debug($"[CcbWS] SendChat session={session} mode={mode} effort={effort}");
-        await SendJson(new { type = "chat", text, session, thinking = new { mode, effort, tokens } });
+        await SendJson(new { type = "chat", text, session, thinking = new { mode, effort } });
     }
 
     /// <summary>发送中断请求，中止当前 AI 回复</summary>
@@ -160,8 +157,7 @@ public class CcbWebSocket : IDisposable
             thinking = new
             {
                 mode = ThinkingMode,
-                effort = ThinkingEffort,
-                tokens = MaxThinkingTokens
+                effort = ThinkingEffort
             }
         });
     }

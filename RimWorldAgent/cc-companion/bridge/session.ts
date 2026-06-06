@@ -77,13 +77,10 @@ export function createSession(sdk: any, abortController?: AbortController) {
 
   const tm = Thinking.mode;
   if (tm === 'disabled') {
-    (options as any).thinking = { type: 'disabled' };
-  } else if (tm === 'adaptive') {
-    (options as any).thinking = { type: 'adaptive' };
-    if (Thinking.effort) (options as any).effort = Thinking.effort;
-  } else if (tm === 'fixed') {
-    (options as any).thinking = { type: 'enabled', budgetTokens: Thinking.maxTokens || 8000 };
-    if (Thinking.effort) (options as any).effort = Thinking.effort;
+    options.thinking = { type: 'disabled' };
+  } else {
+    options.thinking = { type: 'adaptive' };
+    if (Thinking.effort) options.effort = Thinking.effort;
   }
 
   const queryIterator = sdk.query({ prompt: inputStream, options });

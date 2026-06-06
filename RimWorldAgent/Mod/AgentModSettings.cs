@@ -8,9 +8,8 @@ namespace RimWorldAgent
         public string ModelName = "";
 
         // 思考
-        public string ThinkingMode = "default";
-        public string ThinkingEffort = "medium";
-        public int MaxThinkingTokens;
+        public string ThinkingMode = "adaptive";
+        public string ThinkingEffort = "high";
 
         // Token 预算
         public long TokenBudgetLimit;
@@ -38,9 +37,8 @@ namespace RimWorldAgent
         {
             base.ExposeData();
             Scribe_Values.Look(ref ModelName, "modelName", "");
-            Scribe_Values.Look(ref ThinkingMode, "thinkingMode", "default");
-            Scribe_Values.Look(ref ThinkingEffort, "thinkingEffort", "medium");
-            Scribe_Values.Look(ref MaxThinkingTokens, "maxThinkingTokens", 0);
+            Scribe_Values.Look(ref ThinkingMode, "thinkingMode", "adaptive");
+            Scribe_Values.Look(ref ThinkingEffort, "thinkingEffort", "high");
             Scribe_Values.Look(ref TokenBudgetLimit, "tokenBudgetLimit", 0L);
             Scribe_Values.Look(ref TokenBudgetAction, "tokenBudgetAction", "Block");
             Scribe_Values.Look(ref GameMcpHost, "gameMcpHost", "localhost");

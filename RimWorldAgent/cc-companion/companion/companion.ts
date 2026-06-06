@@ -64,10 +64,9 @@ async function main() {
 
   function applyThinking(cfg?: ThinkingConfig) {
     if (!cfg?.mode) return;
-    if (cfg.mode === Thinking.mode && cfg.effort === Thinking.effort && cfg.tokens === Thinking.maxTokens) return;
+    if (cfg.mode === Thinking.mode && cfg.effort === Thinking.effort) return;
     Thinking.mode = cfg.mode;
     if (cfg.effort) Thinking.effort = cfg.effort;
-    if (cfg.tokens != null) Thinking.maxTokens = cfg.tokens;
     log(`思考模式: ${Thinking.mode}${cfg.effort ? ' effort=' + cfg.effort : ''}`);
     startNewSession();
   }

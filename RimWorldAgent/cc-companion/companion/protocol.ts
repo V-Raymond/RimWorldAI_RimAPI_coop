@@ -41,7 +41,6 @@ export type OutboundMessage = HelloOk | ErrorMessage;
 /** 思考配置（随 chat 一起发送，变更加 session） */
 
 export interface ThinkingConfig {
-  mode: 'default' | 'disabled' | 'adaptive' | 'fixed';
-  effort?: 'low' | 'medium' | 'high' | 'xhigh';
-  tokens?: number;
+  mode: 'adaptive' | 'disabled';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
