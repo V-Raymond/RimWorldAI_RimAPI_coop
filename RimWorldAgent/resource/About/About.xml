@@ -3,13 +3,7 @@
   <name>RimWorld Agent</name>
   <author>codexvn</author>
   <packageId>codexvn.rimworld.agent</packageId>
-  <description>
-AI Colony Runtime — 连接 Claude API 自主管理殖民地。
-Plan/Act 双阶段调度 + 事件中断系统。
-代理全部 100+ 游戏工具。
-支持 EXE 独立运行和 MOD 游戏内加载。
-依赖 RimWorld MCP Mod。
-  </description>
+  <description>AI Colony Runtime — 连接 Claude API 自主管理殖民地。个人学习与技术探索项目，不保证稳定性和用户体验。</description>
   <supportedVersions><li>1.6</li></supportedVersions>
   <modDependencies>
     <li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName></li>

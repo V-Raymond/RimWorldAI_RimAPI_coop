@@ -3,11 +3,7 @@
   <name>RimWorld Agent UI</name>
   <author>codexvn</author>
   <packageId>codexvn.rimworld.agent.ui</packageId>
-  <description>
-AI 对话界面 — 游戏内对话框 + Web 面板(:19997)。
-实时流式对话、思考过程可视、工具调用追踪、Task 面板。
-通过 UIMessageBus WS 连接 RimWorld Agent。
-  </description>
+  <description>AI 对话界面 — 游戏内对话框 + Web 面板(:19997)。个人学习与技术探索项目，不保证稳定性和用户体验。</description>
   <supportedVersions><li>1.6</li></supportedVersions>
   <modDependencies>
     <li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName></li>

@@ -3,7 +3,7 @@
   <name>RimWorld MCP</name>
   <author>codexvn</author>
   <packageId>codexvn.rimworld.mcp</packageId>
-  <description>MCP Server — 将 RimWorld 暴露为 100+ AI 工具。分块地图渲染 + 三种压缩算法降低 Token 消耗。事件分级推送，支持双工通知。是 AI Colony Runtime 的游戏接口层。</description>
+  <description>MCP Server — 将 RimWorld 暴露为 100+ AI 工具。个人学习与技术探索项目，不保证稳定性和用户体验。</description>
   <supportedVersions><li>1.6</li></supportedVersions>
   <modDependencies><li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName></li></modDependencies>
 </ModMetaData>
