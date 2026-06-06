@@ -30,6 +30,15 @@
 - 不接任务、不养宠物、不过度开采（控财富）
 - 马蹄钉+木偶戏台够初期娱乐
 
+### 工作类型速查
+
+`set_work_priority` 的 `work_type` 参数接受以下 defName（共 20 种）：
+
+`Firefighter`, `Doctor`, `Patient`, `PatientBedRest`, `BasicWorker`,
+`Warden`, `Handling`, `Cooking`, `Construction`, `Repair`,
+`Growing`, `Mining`, `PlantCutting`, `Smithing`, `Tailoring`,
+`Art`, `Crafting`, `Hauling`, `Cleaning`, `Research`
+
 **工作分工**：全员所有工作类型至少 3（可替补），1-2 划分主职责：
 - 射击最高者：战斗 1、搬运 2、烹饪 2、其余 3
 - 射击次高者：战斗 1、建造 2、采矿 2、搬运 2、其余 3
@@ -72,6 +81,13 @@
 
 ### 战斗速查
 收到袭击 → 暂停 → 全员征召 → 检查武器护甲 → 近战@高护甲上前缠斗 → 远程@掩体后输出 → 设为 1 倍速 → 集火 → 救治。详细流程用 `active_skill combat-preparation`。
+
+### 治疗注意事项
+- **患者必须静止不动才能被治疗**：被治疗的目标不能移动（战斗中奔跑的殖民者无法被治疗）
+- 受伤后立即用 `set_work_priority` 将患者 **Patient = 1、PatientBedRest = 1**。设置后游戏 WorkGiver 系统会自动驱动殖民者前往医疗床卧床休养（`restUntilHealed`），无需手动指派
+- Patient 控制受伤后主动就医，PatientBedRest 控制卧床休养至痊愈
+- 确保有殖民者 Doctor 优先级 ≥ 2 才能自动执行治疗任务
+- 紧急情况可征召医生使用 `tend_now` 优先治疗（优先级最高，无视工作列表）
 
 ### 弹框拦截教程
 

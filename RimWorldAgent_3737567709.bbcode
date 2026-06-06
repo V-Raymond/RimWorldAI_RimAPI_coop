@@ -1,0 +1,223 @@
+[h1]RimWorld Agent[/h1]
+
+[b]AI Colony Runtime — 连接 Claude API，让 AI 成为你的 RimWorld 指挥官。[/b]
+
+[hr]
+
+[h2]简介[/h2]
+
+RimWorld Agent 是一个 AI 运行时引擎，通过 MCP 协议与游戏无缝通信，集成 Claude Agent SDK，实现 AI 自主管理殖民地。AI 会规划策略、执行操作、应对突发事件——你可以通过游戏内对话框或 Web 面板观察 AI 的思考过程，随时介入。
+
+核心流程：[b]游戏状态 → MCP 服务器 → Agent 调度循环 → Claude SDK → AI 决策 → MCP 工具调用 → 游戏执行[/b]。
+
+[hr]
+
+[h2]核心特性[/h2]
+
+[list]
+[*][b]Plan / Act 双阶段调度[/b] — AI 在规划与执行间自主切换，Plan 时暂停分析全局，Act 时恢复速度执行操作
+[*][b]事件中断系统[/b] — 4 级事件分流，突袭/死亡立即打断 AI 当前任务，Info 级静默注入不遗漏
+[*][b]Claude Agent SDK 集成[/b] — 通过 Node.js 子进程桥接，支持流式对话、工具调用、会话管理
+[*][b]100+ 游戏工具代理[/b] — 代理 RimWorld MCP 的全部工具，AI 能像玩家一样操作游戏全部功能
+[*][b]13 个领域 Skill[/b] — 基地布局、装备制造、战斗部署、医疗策略、资源物流等专业知识文件
+[*][b]双工通知机制[/b] — Tool Result Suffix 实现 Agent与游戏双向通知，每次工具调用结果末尾注入提醒
+[*][b]Plan/Act 提醒[/b] — 8 种自动提醒防止 AI 停留在错误状态（暂停过久/执行过长/停留过久/通知堆积等）
+[*][b]Task 任务管理[/b] — AI 自主创建/更新/完成 Task，UI 实时显示进度面板
+[*][b]两种运行模式[/b] — MOD 模式（游戏内加载）+ EXE 模式（独立进程），灵活部署
+[*][b]多轮对话持久化[/b] — SQLite WAL (EXE) 或内存存储 (MOD)，支持向上滚动加载历史
+[/list]
+
+[hr]
+
+[h2]Plan / Act 双阶段[/h2]
+
+AI 在两个阶段之间自主切换，模拟人类玩家的决策节奏：
+
+[table]
+[tr][th]阶段[/th][th]游戏状态[/th][th]行为[/th][th]触发[/th][/tr]
+[tr][td][b]PLAN（规划）[/b][/td][td]暂停[/td][td]分析全局状态，制定策略计划[/td][td]冷启动、每日早报、自主触发[/td][/tr]
+[tr][td][b]ACT（执行）[/b][/td][td]运行中[/td][td]恢复速度，逐项执行计划[/td][td]Plan 完成后自主切换[/td][/tr]
+[/table]
+
+每次工具调用结果末尾自动注入阶段提醒——AI 每次行动都能感知当前应处状态。
+
+[hr]
+
+[h2]事件中断系统[/h2]
+
+游戏事件按严重程度分四级，精准分流处理：
+
+[table]
+[tr][th]级别[/th][th]中断 AI[/th][th]后缀注入[/th][th]UI 推送[/th][th]典型事件[/th][/tr]
+[tr][td][b]L3 Critical[/b][/td][td]Yes 暂停，紧急处理[/td][td]Yes DangerSummary[/td][td]Yes[/td][td]突袭、Boss 战、角色死亡[/td][/tr]
+[tr][td][b]L2 Warning[/b][/td][td]Yes 立即中断[/td][td]Yes 计数[/td][td]Yes[/td][td]仪式失败、角色被困[/td][/tr]
+[tr][td][b]L1 Info[/b][/td][td]No[/td][td]Yes 计数[/td][td]No[/td][td]商队来访、任务完成[/td][/tr]
+[tr][td][b]L0 Silent[/b][/td][td]No[/td][td]Yes[/td][td]No[/td][td]技能升级、操作被拒[/td][/tr]
+[/table]
+
+[b]核心原则[/b]：所有级别事件均通过后缀注入机制送达 AI——确保 AI 下次工具调用时不遗漏任何事件。
+
+[hr]
+
+[h2]Plan/Act 提醒机制[/h2]
+
+每次工具调用结果末尾自动注入上下文提醒，防止 AI 陷入错误状态：
+
+[table]
+[tr][th]提醒类型[/th][th]阈值[/th][th]触发条件[/th][th]提示内容[/th][/tr]
+[tr][td][b]ACT 暂停过久[/b][/td][td]5 轮[/td][td]ACT 模式下游戏暂停[/td][td]提示调用 enter_act() 恢复游戏速度[/td][/tr]
+[tr][td][b]ACT 执行过久[/b][/td][td]10 轮[/td][td]ACT 模式连续执行[/td][td]提示调用 enter_plan() 审视进度[/td][/tr]
+[tr][td][b]PLAN 停留过久[/b][/td][td]10 轮[/td][td]PLAN 模式长时间冻结[/td][td]提示尽快制定计划并进入 ACT[/td][/tr]
+[tr][td][b]通知堆积[/b][/td][td]5 条[/td][td]未读通知积累[/td][td]提示调用 get_notifications 查看[/td][/tr]
+[tr][td][b]任务未完成[/b][/td][td]10 轮[/td][td]有未完成的 Task[/td][td]列出待办项，提示标记已完成[/td][/tr]
+[tr][td][b]未使用 Task[/b][/td][td]15 轮[/td][td]连续未用 task 工具[/td][td]提示创建任务计划跟踪进度[/td][/tr]
+[tr][td][b]工具输出过久[/b][/td][td]20 轮[/td][td]连续调用工具无文本分析[/td][td]提示输出自然语言总结[/td][/tr]
+[tr][td][b]世界摘要过旧[/b][/td][td]30 轮[/td][td]距上次全局刷新较久[/td][td]提示调用 get_world_summary[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]Task 任务机制[/h2]
+
+AI 通过内部工具管理任务列表，代替 SDK 原生 Task 工具：
+
+[list]
+[*][b]task_create[/b] — 创建新任务（subject/description/status）
+[*][b]task_update[/b] — 更新任务状态（pending→in_progress→completed）
+[*][b]task_list[/b] — 查看所有任务
+[*][b]task_get[/b] — 查看单个任务详情
+[/list]
+
+任务状态实时显示在 UI 右侧面板，带进度标记：
+[code]-- 任务 --
+[>] 扩大种植区到 10x10          <- 进行中
+[ ] 为殖民者打造防弹背心          <- 待完成
+[ ] 研究微电子基础               <- 待完成
+[ok] 建造医疗室                  <- 已完成[/code]
+
+[hr]
+
+[h2]领域 Skill 系统[/h2]
+
+13 个 Markdown 知识文件为 AI 提供领域专长，可自行激活相应 Skill：
+
+[list]
+[*][b]基地布局[/b] — 13x13 标准间、功能分区、材料选择
+[*][b]殖民地管理[/b] — 工作分配、资源规划、优先级
+[*][b]装备制造[/b] — 制造策略、品质控制、材料选择
+[*][b]战斗准备[/b] — 阵地部署、武器射程、掩体利用
+[*][b]医疗策略[/b] — 手术风险、植入体策略、药物使用
+[*][b]研究管理[/b] — 科技树优先级、资源配置
+[*][b]资源物流[/b] — 物品搬运、储藏规划、供应链
+[*][b]殖民者互动[/b] — 心情管理、社交关系、招募
+[*][b]任务管理[/b] — 任务优先级、风险收益分析
+[*][b]贸易[/b] — 交易策略、价值评估
+[*][b]种植与食物[/b] — 作物选择、区域规划（计划中）
+[*][b]动物管理[/b] — 驯服、训练、屠宰（计划中）
+[*][b]温度与环境[/b] — 温度控制、污染处理（计划中）
+[/list]
+
+[hr]
+
+[h2]内部工具[/h2]
+
+Agent 提供 7 个内部工具，指导 AI 的元行为：
+
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_skills[/td][td]获取可用领域技能列表[/td][/tr]
+[tr][td]active_skill[/td][td]激活指定领域技能[/td][/tr]
+[tr][td]enter_plan[/td][td]暂停游戏，进入规划阶段[/td][/tr]
+[tr][td]enter_act[/td][td]恢复游戏速度，进入执行阶段[/td][/tr]
+[tr][td]read_memory[/td][td]读取持久记忆文件[/td][/tr]
+[tr][td]update_memory[/td][td]写入/更新持久记忆文件[/td][/tr]
+[tr][td]set_tool_result_suffix[/td][td]设置一次性工具结果后缀[/td][/tr]
+[/table]
+
+代理游戏工具：[b]全部 100+[/b] RimWorld MCP 工具，通过 [code]mcp__agent__*[/code] 命名空间调用。
+
+[hr]
+
+[h2]两种运行模式[/h2]
+
+[table]
+[tr][th]模式[/th][th]进程[/th][th]存储方式[/th][th]适用场景[/th][/tr]
+[tr][td][b]MOD[/b][/td][td]RimWorld 加载 DLL[/td][td]存档内 Scribe 持久化[/td][td][b]推荐[/b]：游戏内直接运行，体验最佳[/td][/tr]
+[tr][td][b]EXE[/b][/td][td]独立进程[/td][td]JSON + SQLite WAL[/td][td]开发测试、远程连接游戏[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]技术架构[/h2]
+
+[code]RimWorldAgent                         RimWorldMCP
++----------------------+              +----------------------+
+| AgentEngine          |  HTTP POST   | MCP Server :9877     |
+| McpClient ------------> /mcp ------> 100+ game tools      |
+| McpClient <------------ /sse <------ tick push + events   |
+|                      |              |                      |
+| AgentMcpServer :9878 <- tools/call ---------------------- SDK tool calls
+|                      |              |                      |
+| CcbManager -- spawn --> cc-companion (Node.js :19998)     |
+|                      |   WebSocket |                      |
+| UIMessageBus :19999 --> UI broadcast|                      |
++----------------------+              +----------------------+[/code]
+
+[b]零引用设计[/b]：RimWorldAgent 与 RimWorldMCP 互不引用，仅通过 MCP 协议通信。
+
+[h3]端口一览[/h3]
+[table]
+[tr][td][b]端口[/b][/td][td][b]服务[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]:9877[/td][td]游戏 MCP Server[/td][td]100+ 游戏工具 + 事件推送[/td][/tr]
+[tr][td]:9878[/td][td]Agent MCP Server[/td][td]代理游戏工具 + 7 个内部工具[/td][/tr]
+[tr][td]:19998[/td][td]CC Companion[/td][td]Node.js Claude SDK 桥接[/td][/tr]
+[tr][td]:19999[/td][td]UIMessageBus[/td][td]UI 消息广播 (WebSocket)[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]CC Companion 桥接[/h2]
+
+通过 Node.js 子进程桥接 Claude Agent SDK，实现：
+
+[list]
+[*]流式对话 — AI 回复逐字推送给 UI
+[*]工具调用 — 100+ MCP 工具全部通过 SDK 调用
+[*]会话管理 — chat/abort 两种操作
+[*]仅 4 种 WS 消息类型 — 极简协议设计
+[/list]
+
+[hr]
+
+[h2]依赖[/h2]
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077]Harmony[/url] — 运行时补丁框架（必需）
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3732261759]RimWorld MCP[/url] — 游戏工具接口（必需，提供 100+ 工具）
+[/list]
+
+[hr]
+
+[h2]使用方法[/h2]
+
+[list]
+[*]安装 [b]Harmony[/b] 和 [b]RimWorld MCP[/b] 后订阅本 Mod
+[*]启动 RimWorld，AI Runtime 自动随存档启动
+[*]按 [b]Ctrl+Shift+C[/b] 打开对话窗口（需安装 RimWorld Agent UI）
+[*]或浏览器访问 [code]http://127.0.0.1:19997[/code] 使用 Web 面板
+[*]AI 将自主开始冷启动流程：暂停游戏 - 分析状态 - 制定计划 - 执行
+[/list]
+
+[hr]
+
+[h2]相关 Mod[/h2]
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3732261759]RimWorld MCP[/url] — 游戏工具接口（必需依赖）
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3737568694]RimWorld Agent UI[/url] — AI 对话界面，游戏内 + Web 双向交互（强烈推荐）
+[/list]
+
+[hr]
+
+[b]作者：[/b]codexvn
+[b]版本：[/b]RimWorld 1.6

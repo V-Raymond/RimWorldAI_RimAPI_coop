@@ -37,7 +37,7 @@ namespace RimWorldAgent.Core.AgentRuntime.Tools
 
             AgentOrchestrator.EnterActPhase();
             await AgentOrchestrator.PaceController.ResumeForAction(AgentOrchestrator.SessionMcp, speed);
-            return ($"已进入 Act 阶段，游戏速度: {speed}。{reason}", false);
+            return ($"已进入 Act 阶段，游戏速度: {speed}。{reason}\n\n可使用 get_skills 和 active_skill 工具获取领域知识。", false);
         }
     }
 }

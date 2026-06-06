@@ -8,12 +8,19 @@ export interface CompanionConfig {
   projectPath: string;
   modelName: string;
   settingSources: string[];
+  skills: string[];
 }
 
 export const Thinking = {
   mode: 'adaptive' as string,
   effort: 'high' as EffortLevel,
 };
+
+function parseSkillsJson(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); }
+  catch (err: any) { console.error(`[config] 解析 CCB_SKILLS 失败: ${err.message} raw=${raw.substring(0, 200)}`); return []; }
+}
 
 export const CONFIG: CompanionConfig = {
   host: process.env.CCB_HOST || '0.0.0.0',
@@ -24,6 +31,7 @@ export const CONFIG: CompanionConfig = {
   settingSources: process.env.CCB_SETTING_SOURCES
     ? process.env.CCB_SETTING_SOURCES.split(',').map(s => s.trim())
     : ['user', 'project', 'local'],
+  skills: parseSkillsJson(process.env.CCB_SKILLS),
 };
 
 export function parseArgs(argv: string[]): void {
@@ -35,5 +43,10 @@ export function parseArgs(argv: string[]): void {
     else if (a === '--model-name' && argv[i + 1]) CONFIG.modelName = argv[++i];
     else if (a === '--project-path' && argv[i + 1]) CONFIG.projectPath = argv[++i];
     else if (a === '--setting-sources' && argv[i + 1]) CONFIG.settingSources = argv[++i].split(',').map(s => s.trim());
+    else if (a === '--skills' && argv[i + 1]) {
+      const raw = argv[++i];
+      try { CONFIG.skills = JSON.parse(raw); }
+      catch (err: any) { console.error(`[config] 解析 --skills 参数失败: ${err.message} raw=${raw.substring(0, 200)}`); }
+    }
   }
 }

@@ -1,0 +1,135 @@
+[h1]RimWorld Agent UI[/h1]
+
+[b]AI 对话界面 — 游戏内聊天窗口 + Web 面板，让你与 AI 指挥官实时交流。[/b]
+
+[hr]
+
+[h2]简介[/h2]
+
+RimWorld Agent UI 为 RimWorld Agent 提供交互界面。你可以在游戏内打开对话窗口，查看 AI 的思考和决策过程，随时与 AI 交流、下达指令。也可以通过浏览器访问 Web 面板，脱离游戏窗口也能查看 AI 在做什么。
+
+通过 WebSocket 连接 RimWorld Agent 的 UIMessageBus（:19999），实时接收 AI 的流式回复、思考过程、工具调用状态。
+
+[hr]
+
+[h2]核心特性[/h2]
+
+[list]
+[*][b]游戏内对话框[/b] — 按 [b]Ctrl+Shift+C[/b] 打开，不打断游戏体验，悬浮窗口设计
+[*][b]实时流式对话[/b] — AI 的回复逐字呈现，像真人聊天一样自然流畅
+[*][b]思考过程可视[/b] — AI 的推理过程以折叠面板展示（橙色文字），透明可查、可展开
+[*][b]工具调用追踪[/b] — 右侧面板实时显示 AI 正在调用的游戏操作，含工具名称、参数、耗时、状态
+[*][b]Task 任务面板[/b] — 右侧栏显示 AI 的任务列表，带进度标记（待做/进行中/已完成）
+[*][b]Web 管理面板[/b] — 浏览器访问 [code]http://127.0.0.1:19997[/code]，脱离游戏窗口也能管理
+[*][b]对话历史[/b] — 支持向上滚动加载更早的对话记录，完整重现决策过程
+[*][b]Token 用量显示[/b] — 顶部状态栏实时展示 Token 消耗、缓存命中率、剩余预算
+[*][b]操作控制[/b] — 底栏提供清空、继续、中断按钮，随时介入 AI 工作
+[*][b]阶段状态指示[/b] — 实时显示当前 PLAN/ACT 阶段、压缩状态、连接状态
+[/list]
+
+[hr]
+
+[h2]界面布局[/h2]
+
+[code]+------------------------------------------------------+
+| colony status bar (season, resources, token usage)  |
++------------------------+-----------------------------+
+| dialog flow            | tool call panel             |
+| [you] check colony     | #1 [OK] get_colony (0.8s)   |
+| [think] AI thinking.. | #2 [OK] search_items (0.3s) |
+| [AI] expand farm zone  | #3 [..] designate_build ... |
+|                        |                             |
+|                        | -- Tasks --                 |
+|                        | [>] expand farm to 10x10   |
+|                        | [ ] craft bulletproof vest  |
+|                        | [ok] build hospital room   |
++------------------------+-----------------------------+
+| > type message...__________________________ [send] |
+| * connected | ACT phase | [compacting] | clear continue abort |
++------------------------------------------------------+[/code]
+
+[h3]界面说明[/h3]
+
+[list]
+[*][b]顶部状态栏[/b] — 显示季节/日期、输入/输出/缓存 Token 使用量和预算剩余
+[*][b]左栏 对话流[/b] — 用户消息、AI 思考（橙色折叠）、AI 回复（流式）、系统通知
+[*][b]右栏 工具面板[/b] — 每次工具调用的卡片（名称/参数/状态/耗时），Task 任务列表
+[*][b]底栏 操作区[/b] — 消息输入框 + 发送按钮 + 状态指示 + 控制按钮
+[/list]
+
+[hr]
+
+[h2]使用方式[/h2]
+
+[h3]游戏内窗口[/h3]
+
+[list]
+[*]确保 RimWorld Agent 正在运行
+[*]按 [b]Ctrl+Shift+C[/b] 打开对话窗口
+[*]在输入框中键入消息，回车发送
+[*]观察 AI 的思考过程和回复
+[/list]
+
+[h3]Web 管理面板[/h3]
+
+[list]
+[*]确保 RimWorld Agent 正在运行
+[*]浏览器打开 [code]http://127.0.0.1:19997[/code]
+[*]获得与游戏内完全一致的对话界面
+[*]适合在另一台显示器上使用，不遮挡游戏画面
+[/list]
+
+[hr]
+
+[h2]消息类型支持[/h2]
+
+UI 通过 WebSocket 接收多种消息类型并分别渲染：
+
+[table]
+[tr][td][b]消息类型[/b][/td][td][b]渲染位置[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]用户消息[/td][td]左栏 [你][/td][td]你的输入或游戏事件通知[/td][/tr]
+[tr][td]思考增量[/td][td]左栏 [思考] 橙色[/td][td]AI 逐步推理文本，折叠可展开[/td][/tr]
+[tr][td]文本增量[/td][td]左栏 [AI][/td][td]AI 流式回复，逐字追加[/td][/tr]
+[tr][td]工具调用[/td][td]右栏 卡片[/td][td]工具名称/参数/状态 [OK]/[..]/[XX][/td][/tr]
+[tr][td]工具结果[/td][td]右栏 卡片更新[/td][td]结果状态 + 执行耗时[/td][/tr]
+[tr][td]系统消息[/td][td]左栏 [系统][/td][td]SDK 初始化、上下文压缩等通知[/td][/tr]
+[tr][td]会话结果[/td][td]左栏 结束标记[/td][td]成功/异常结束，可选统计信息[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]配置[/h2]
+
+游戏内打开 [b]选项 -> Mod 设置 -> RimWorld Agent UI[/b]：
+
+[table]
+[tr][td][b]设置项[/b][/td][td][b]默认值[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]WebUI 端口[/td][td]19997[/td][td]Web 面板 HTTP 服务端口[/td][/tr]
+[tr][td]UIMessageBus 端口[/td][td]19999[/td][td]内部通信端口（一般不需修改）[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]依赖[/h2]
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077]Harmony[/url] — 运行时补丁框架（必需）
+[/list]
+
+[hr]
+
+[h2]推荐搭配[/h2]
+
+RimWorld Agent UI 本身是一个纯界面 Mod，需要搭配以下 Mod 才能发挥完整功能：
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3737567709]RimWorld Agent[/url] — AI 运行时引擎（核心，提供对话能力）
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3732261759]RimWorld MCP[/url] — 游戏工具接口（RimWorld Agent 的必需依赖）
+[/list]
+
+[b]安装顺序[/b]：Harmony -> RimWorld MCP -> RimWorld Agent -> RimWorld Agent UI。
+
+[hr]
+
+[b]作者：[/b]codexvn
+[b]版本：[/b]RimWorld 1.6

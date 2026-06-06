@@ -40,6 +40,7 @@ namespace RimWorldAgent.Core.AgentRuntime
             };
 
             // 客户端 chat → 中断当前会话 + 预算检查 + 回显 + CCB
+            const string interruptSkillHint = "\n\n<system-reminder>\n在处理前，请先使用 get_skills 查看可用领域知识，必要时用 active_skill 激活相关 Skill 获取详细指导。\n</system-reminder>";
             UIMessageBus.OnChat += async (text, thinking) =>
             {
                 CoreLog.Debug($"[AgentLoop] OnChat text=\"{text.Substring(0, Math.Min(text.Length, 60))}\"");
@@ -50,6 +51,9 @@ namespace RimWorldAgent.Core.AgentRuntime
                 }
                 ConversationStore?.RecordUserMessage(text);
                 await ws.SendAbort();
+                // 打断运行中的会话时追加 Skill 提示
+                if (AgentOrchestrator.IsRunning)
+                    text += interruptSkillHint;
                 UIMessageBus.PushUiMessage(UiMessage.User(text));
                 await ws.SendChat(ChatChannel.Bus, text, thinking);
             };
@@ -210,7 +214,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                 db.TotalCacheCreateTokens, 0, TokenUsageTracker.CurrentInputTokens));
         }
 
-        /// <summary>MCP 游戏事件 → 按级别分流：Critical/Warning 中断，Info/Silent 仅 suffix</summary>
+        /// <summary>MCP 游戏事件 → 按级别分流：Critical 中断，Warning/Info/Silent 仅 suffix</summary>
         public static void WireEvents(McpClient mcp)
         {
             // tick 事件 → 更新游戏 tick
@@ -227,16 +231,16 @@ namespace RimWorldAgent.Core.AgentRuntime
                 AgentOrchestrator.NotisAgent(summary);
                 ToolDispatcher.MarkNotifReceived();
 
-                if (evt.Level >= EventLevel.Warning)
+                if (evt.Level >= EventLevel.Critical)
                 {
-                    // Critical / Warning → 立即中断 + UI + DB
+                    // Critical → 立即中断 + UI + DB
                     CoreLog.Info($"[event] 触发 RequestInterrupt: {summary}");
                     AgentOrchestrator.RequestInterrupt(summary);
                     var notifyText = $"{AgentOrchestrator.InterruptPromptPrefix}\n{summary}\n{AgentOrchestrator.InterruptPromptSuffix}";
                     UIMessageBus.PushUiMessage(UiMessage.User(notifyText));
                     ConversationStore?.RecordUserMessage(notifyText);
                 }
-                // Info / Silent → 仅 suffix，不打断当前会话
+                // Warning / Info / Silent → 仅 suffix，不打断当前会话
             };
         }
 

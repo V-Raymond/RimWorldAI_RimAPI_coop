@@ -1,0 +1,350 @@
+[h1]RimWorld MCP[/h1]
+
+[b]将 RimWorld 暴露为 100+ AI 工具的游戏接口层 —— AI Colony Runtime 的核心依赖。[/b]
+
+[hr]
+
+[h2]简介[/h2]
+
+RimWorld MCP 是一个内嵌于游戏的 MCP（Model Context Protocol）服务器，它将 RimWorld 的游戏状态和全部操作暴露为标准化的 AI 可调用工具。AI 通过 HTTP/SSE 连接即可像玩家一样操作游戏——建造、制造、战斗、医疗、贸易、研究，无所不能。
+
+专门为 LLM Token 消耗优化：分块地图渲染、三种压缩算法、分页查询、表格化输出——让 AI 用最少的 Token 获取最多的信息。
+
+[hr]
+
+[h2]核心特性[/h2]
+
+[list]
+[*][b]100+ AI 工具[/b] — 覆盖 23 个类别：通用查询、网格查询、制造、建造、标记、存储/种植、装备管理、截图、研究、殖民者需求、医疗、战斗、右键菜单操作、贸易、搜索、建筑布局、移动、弹框、命令工具、区域管理、基地模板、腐坏追踪、地图
+[*][b]分块地图渲染[/b] — 64 种符号的字符网格地图（建筑/物品/植物/生物），支持自定义坐标范围
+[*][b]三种压缩算法[/b] — RLE 游程编码 + 哈希去重 + 差分对比，大幅降低 Token 消耗
+[*][b]事件分级推送[/b] — 4 级分类（L0-L3），突袭/死亡=Critical 推送，技能升级=Silent 静默注入
+[*][b]双工通知机制[/b] — Agent 可设置一次性 Tool Result Suffix，游戏侧在下一次工具结果末尾自动追加
+[*][b]Token 预算系统[/b] — 按存档限制消耗，超限自动暂停或 Webhook 告警，带底栏实时显示
+[*][b]Skill 领域知识[/b] — 6 个 Markdown 技能文件：基地布局、装备制造、战斗部署、医疗策略、殖民地管理、研究管理
+[*][b]视角自动移动[/b] — AI 调用涉及坐标的工具时自动平移游戏画面到目标位置
+[*][b]OSS 截图上传[/b] — 截图自动上传阿里云 OSS，返回公开/预签名 URL
+[*][b]可达性检测[/b] — 建造/种植/采矿等操作自动检查殖民者能否到达目标位置
+[*][b]简体中文界面[/b] — 所有工具名称和 Mod 设置界面完整中文翻译
+[/list]
+
+[hr]
+
+[h2]工具分类一览[/h2]
+
+[h3]通用查询 (7)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_game_context[/td][td]游戏全局状态快照[/td][/tr]
+[tr][td]get_resources[/td][td]资源库存报告[/td][/tr]
+[tr][td]check_colony[/td][td]殖民地提醒（空闲/崩溃/流血/食物/防御）[/td][/tr]
+[tr][td]toggle_pause[/td][td]切换暂停/恢复[/td][/tr]
+[tr][td]advance_tick[/td][td]运行指定 tick 数后暂停返回[/td][/tr]
+[tr][td]get_mcp_latency[/td][td]探查 MCP 通信延迟[/td][/tr]
+[tr][td]check_map_loaded[/td][td]检查游戏和地图加载状态[/td][/tr]
+[/table]
+
+[h3]网格查询 (6)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_tile_detail[/td][td]指定坐标范围详情[/td][/tr]
+[tr][td]get_tile_grid[/td][td]64 种符号的字符网格地图[/td][/tr]
+[tr][td]fertility_grid[/td][td]地面肥沃度字符网格[/td][/tr]
+[tr][td]terrain_grid[/td][td]地形类型字符网格[/td][/tr]
+[tr][td]temperature_grid[/td][td]温度分布字符网格[/td][/tr]
+[tr][td]pollution_grid[/td][td]污染程度字符网格[/td][/tr]
+[/table]
+
+[h3]制造 (4)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]list_recipes[/td][td]列出可用配方[/td][/tr]
+[tr][td]create_production_bill[/td][td]创建制造单据[/td][/tr]
+[tr][td]get_bills[/td][td]查看工作台单据状态[/td][/tr]
+[tr][td]manage_bill[/td][td]管理单据（暂停/恢复/删除/优先级）[/td][/tr]
+[/table]
+
+[h3]建造 (4)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]designate_build[/td][td]放置建造蓝图（单格）[/td][/tr]
+[tr][td]designate_room[/td][td]快速建造矩形房间（墙+门+地板）[/td][/tr]
+[tr][td]uninstall_building[/td][td]拆卸建筑为微缩物品[/td][/tr]
+[tr][td]install_minified_thing[/td][td]安装微缩物品[/td][/tr]
+[/table]
+
+[h3]标记 (5)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]designate_mine[/td][td]标记采矿（矩形范围）[/td][/tr]
+[tr][td]designate_plants_cut[/td][td]标记植物砍伐（可过滤树种）[/td][/tr]
+[tr][td]designate_harvest[/td][td]标记作物收割[/td][/tr]
+[tr][td]designate_deconstruct[/td][td]标记建筑拆除（矩形范围）[/td][/tr]
+[tr][td]designate_clear_plants[/td][td]标记清除非树木植物[/td][/tr]
+[/table]
+
+[h3]存储/种植 (6)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]create_stockpile[/td][td]创建物品储藏区（预设+优先级+筛选）[/td][/tr]
+[tr][td]create_growing_zone[/td][td]创建种植区并设置植物类型[/td][/tr]
+[tr][td]set_grower_plant[/td][td]设置种植区作物类型[/td][/tr]
+[tr][td]manage_stockpile_filter[/td][td]管理储藏区物品筛选[/td][/tr]
+[tr][td]delete_zone[/td][td]删除区域[/td][/tr]
+[tr][td]expand_zone[/td][td]扩展已有区域范围[/td][/tr]
+[/table]
+
+[h3]装备管理 (3)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]find_equipment[/td][td]搜索地图可用武器/衣物[/td][/tr]
+[tr][td]get_recommended_apparel[/td][td]按游戏内置评分推荐衣物[/td][/tr]
+[tr][td]get_recommended_weapon[/td][td]按科技等级推荐武器[/td][/tr]
+[/table]
+
+[h3]截图 (1)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]take_screenshot[/td][td]截取地图指定范围，自动 OSS 上传[/td][/tr]
+[/table]
+
+[h3]研究 (5)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]list_research_projects[/td][td]列出研究项目（分页）[/td][/tr]
+[tr][td]get_research_progress[/td][td]获取研究进度[/td][/tr]
+[tr][td]set_research_project[/td][td]设置研究项目[/td][/tr]
+[tr][td]stop_research[/td][td]停止当前研究[/td][/tr]
+[tr][td]get_research_speed[/td][td]研究速度详情[/td][/tr]
+[/table]
+
+[h3]殖民者需求 (4)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_colonists[/td][td]殖民者完整信息[/td][/tr]
+[tr][td]get_colonist_needs[/td][td]详细需求状态[/td][/tr]
+[tr][td]get_work_priorities[/td][td]完整工作优先级表[/td][/tr]
+[tr][td]set_work_priority[/td][td]设置工作优先级[/td][/tr]
+[/table]
+
+[h3]医疗 (5)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_colonist_health[/td][td]健康报告[/td][/tr]
+[tr][td]schedule_operation[/td][td]安排手术[/td][/tr]
+[tr][td]tend_now[/td][td]立即治疗指定殖民者[/td][/tr]
+[tr][td]force_surgery[/td][td]强制执行指定手术[/td][/tr]
+[tr][td]get_available_surgeries[/td][td]列出可用手术（分页）[/td][/tr]
+[/table]
+
+[h3]战斗 (6)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]equip_pawn[/td][td]强制殖民者拾取装备[/td][/tr]
+[tr][td]draft_pawn[/td][td]征召/解除征召[/td][/tr]
+[tr][td]get_defense_status[/td][td]防御状态报告[/td][/tr]
+[tr][td]attack_pawn[/td][td]攻击指定目标[/td][/tr]
+[tr][td]force_attack[/td][td]强制攻击（无视掩体）[/td][/tr]
+[tr][td]find_enemies[/td][td]搜索地图上的敌人[/td][/tr]
+[/table]
+
+[h3]右键菜单操作 (10)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]pick_up_item[/td][td]拾取物品[/td][/tr]
+[tr][td]drop_equipment[/td][td]丢弃装备[/td][/tr]
+[tr][td]strip_pawn[/td][td]剥除目标衣物/装备[/td][/tr]
+[tr][td]arrest_pawn[/td][td]逮捕目标[/td][/tr]
+[tr][td]rescue_pawn[/td][td]救援倒地友方[/td][/tr]
+[tr][td]capture_pawn[/td][td]俘虏倒地敌人[/td][/tr]
+[tr][td]ingest_item[/td][td]服食物品[/td][/tr]
+[tr][td]force_dress[/td][td]强制穿戴衣物[/td][/tr]
+[tr][td]haul_item[/td][td]搬运物品[/td][/tr]
+[tr][td]drop_carried[/td][td]放下手中物品[/td][/tr]
+[/table]
+
+[h3]贸易 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]list_faction_traders[/td][td]列出可通讯派系和商船[/td][/tr]
+[tr][td]trade_execute[/td][td]执行交易[/td][/tr]
+[/table]
+
+[h3]搜索 (4)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]search_map[/td][td]按类型搜索地图事物（分页）[/td][/tr]
+[tr][td]find_pawn[/td][td]搜索指定角色/生物（分页）[/td][/tr]
+[tr][td]get_thing_def[/td][td]查询物品定义详情[/td][/tr]
+[tr][td]search_thing_def[/td][td]按关键词搜索 ThingDef（分页）[/td][/tr]
+[/table]
+
+[h3]建筑布局 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_structure_layout[/td][td]查看建筑物内部结构[/td][/tr]
+[tr][td]get_construction_status[/td][td]查看建造项目进度[/td][/tr]
+[/table]
+
+[h3]移动 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]move_pawn[/td][td]移动角色到指定坐标[/td][/tr]
+[tr][td]move_camera[/td][td]移动游戏视角[/td][/tr]
+[/table]
+
+[h3]弹框 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_open_dialogs[/td][td]列出当前打开的弹框[/td][/tr]
+[tr][td]select_dialog_option[/td][td]选择弹框中的选项[/td][/tr]
+[/table]
+
+[h3]右键菜单 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]get_right_click_menu[/td][td]生成右键菜单[/td][/tr]
+[tr][td]select_right_click[/td][td]执行右键菜单选项[/td][/tr]
+[/table]
+
+[h3]命令工具 (8)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]cancel_task[/td][td]取消殖民者当前/排队任务[/td][/tr]
+[tr][td]cancel_build[/td][td]取消蓝图/框架/标记（矩形范围）[/td][/tr]
+[tr][td]designate_hunt[/td][td]标记动物狩猎[/td][/tr]
+[tr][td]designate_slaughter[/td][td]标记驯服动物宰杀[/td][/tr]
+[tr][td]designate_tame[/td][td]标记野生动物驯服[/td][/tr]
+[tr][td]forbid_item[/td][td]禁止区域内物品[/td][/tr]
+[tr][td]allow_item[/td][td]允许区域内物品[/td][/tr]
+[tr][td]claim_item[/td][td]占有区域内物品/建筑[/td][/tr]
+[/table]
+
+[h3]区域管理 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]set_bed_owner_type[/td][td]设置床位类型（医疗/囚犯/殖民者）[/td][/tr]
+[tr][td]set_temp_control[/td][td]设置温度控制设备[/td][/tr]
+[/table]
+
+[h3]基地模板 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]list_base_templates[/td][td]列出可用基地模板[/td][/tr]
+[tr][td]apply_base_template[/td][td]应用基地模板到地图[/td][/tr]
+[/table]
+
+[h3]腐坏追踪 (2)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]check_deterioration[/td][td]扫描物品腐坏/露天耐久[/td][/tr]
+[tr][td]get_deteriorating_items[/td][td]腐坏物品清单[/td][/tr]
+[/table]
+
+[h3]其他 (4)[/h3]
+[table]
+[tr][td][b]工具[/b][/td][td][b]说明[/b][/td][/tr]
+[tr][td]allow_all_items[/td][td]允许地图上所有被禁止的物品[/td][/tr]
+[tr][td]submit_feedback[/td][td]向开发者提交反馈[/td][/tr]
+[tr][td]regenerate_map[/td][td]重新生成当前地图（需确认）[/td][/tr]
+[tr][td]set_tool_result_suffix[/td][td]设置工具结果一次性后缀[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]事件分级系统[/h2]
+
+游戏事件按严重程度分四级，通过 SSE 实时推送给 AI：
+
+[table]
+[tr][th]级别[/th][th]中断 AI[/th][th]典型事件[/th][/tr]
+[tr][td][b]L3 Critical[/b][/td][td]Yes 暂停游戏，紧急处理[/td][td]突袭、Boss 战、角色死亡[/td][/tr]
+[tr][td][b]L2 Warning[/b][/td][td]Yes 立即中断[/td][td]仪式失败、角色被困[/td][/tr]
+[tr][td][b]L1 Info[/b][/td][td]No 静默注入[/td][td]商队来访、任务完成[/td][/tr]
+[tr][td][b]L0 Silent[/b][/td][td]No 静默注入[/td][td]技能升级、操作被拒[/td][/tr]
+[/table]
+
+[hr]
+
+[h2]Skill 领域知识系统[/h2]
+
+6 个 Markdown 知识文件为 AI 提供领域专长：
+
+[list]
+[*][b]基地布局[/b] — 13x13 标准间设计、材料选择、功能分区
+[*][b]装备制造[/b] — 制造策略、品质控制、材料选择
+[*][b]战斗准备[/b] — 阵地部署、武器射程、掩体利用
+[*][b]医疗策略[/b] — 手术风险分析、植入体策略、药物使用
+[*][b]殖民地管理[/b] — 工作分配、资源规划、优先级管理
+[*][b]研究管理[/b] — 科技树优先级、研究资源配置
+[/list]
+
+[hr]
+
+[h2]Token 预算系统[/h2]
+
+按存档限制 AI Token 消耗，防止费用失控：
+
+[list]
+[*][b]预算上限[/b] — 可设额度，超限时自动暂停游戏或 Webhook 告警
+[*][b]三档预警[/b] — 80% 绿色 / 80-95% 黄色 / 95%以上 红色
+[*][b]实时仪表[/b] — 游戏底栏实时显示 Token 用量 + 缓存命中率
+[*][b]全局汇总[/b] — 跨存档按模型统计 Token 消耗
+[/list]
+
+[hr]
+
+[h2]地图渲染与压缩[/h2]
+
+专为 LLM 优化的地图表示方案：
+
+[list]
+[*][b]64 种符号字典[/b] — 每种建筑/物品/植物有唯一字符，语义直观
+[*][b]RLE 游程编码[/b] — 连续相同字符压缩为（字符x次数）
+[*][b]哈希去重[/b] — 连续相同行合并为（行内容x行数）
+[*][b]差分对比[/b] — 仅输出相比上一帧变化的格子
+[/list]
+
+[hr]
+
+[h2]MCP 协议接口[/h2]
+
+[list]
+[*]HTTP SSE 端点：[code]http://localhost:9877/sse[/code] （事件推送）
+[*]HTTP 端点：[code]http://localhost:9877/mcp[/code] （工具调用）
+[*]支持 Claude Desktop、VS Code、JetBrains 等任何 MCP 客户端
+[*]单进程常驻运行，跨存档持续监听，无需每次重新连接
+[/list]
+
+[hr]
+
+[h2]依赖[/h2]
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077]Harmony[/url] — 运行时补丁框架（必需）
+[/list]
+
+[hr]
+
+[h2]使用方法[/h2]
+
+[list]
+[*]订阅并启用本 Mod，启动 RimWorld
+[*]MCP 服务自动运行在 [code]http://localhost:9877[/code]
+[*]在 Claude Desktop 或其他 MCP 客户端中配置端点即可开始使用
+[*]配合 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3737567709]RimWorld Agent[/url] 实现 AI 自主管理殖民地
+[/list]
+
+[hr]
+
+[h2]相关 Mod[/h2]
+
+[list]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3737567709]RimWorld Agent[/url] — AI Colony Runtime，连接 Claude API 自主管理殖民地（推荐）
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3737568694]RimWorld Agent UI[/url] — AI 对话界面，游戏内对话框 + Web 面板（推荐）
+[/list]
+
+[hr]
+
+[b]作者：[/b]codexvn
+[b]版本：[/b]RimWorld 1.6
