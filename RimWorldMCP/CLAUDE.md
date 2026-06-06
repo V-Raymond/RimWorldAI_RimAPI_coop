@@ -14,7 +14,7 @@ RimWorldMCP/
 ├── resource/                  ← MOD 元数据（构建时复制到根 publish）
 │   ├── About/About.xml
 │   ├── Languages/
-│   └── Symbols.json           ← 词表文件 — defName→显示字符映射（由脚本从游戏XML生成）
+│   └── Symbols.json           ← 开发源文件，构建时复制到 Assemblies（与 DLL 同目录）
 ├── scripts/                   ← 开发脚本
 │   ├── generate_symbols.py    ← 从游戏XML生成Symbols.json
 │   ├── check_symbols.py       ← 校验Symbols.json一对一映射

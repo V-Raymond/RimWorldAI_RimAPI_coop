@@ -60,10 +60,9 @@ namespace RimWorldMCP.MapRendering
         {
             try
             {
-                // DLL 位于 Mod/1.6/Assemblies/ → 上 3 层到 Mod 根
+                // 词表与 DLL 同目录: Mod/1.6/Assemblies/Symbols.json
                 var asmDir = Path.GetDirectoryName(typeof(SymbolDictionary).Assembly.Location);
-                var modRoot = Path.GetFullPath(Path.Combine(asmDir ?? ".", "..", "..", ".."));
-                var path = Path.Combine(modRoot, "resource", "Symbols.json");
+                var path = Path.Combine(asmDir ?? ".", "Symbols.json");
 
                 if (!File.Exists(path))
                 {
