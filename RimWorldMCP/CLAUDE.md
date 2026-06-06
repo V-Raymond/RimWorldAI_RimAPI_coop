@@ -21,7 +21,7 @@ RimWorldMCP/
 │   └── semantic_map.py        ← AI润色后的语义字符参照表
 ├── Tools/                     ← 100+ 游戏 Tool
 ├── MapRendering/              ← 网格渲染与符号映射
-│   ├── CellCharProviders.cs   ← 单元格→字符映射（tile/terrain/fertility/temperature/pollution）
+│   ├── CellCharProviders.cs   ← 单元格→字符映射（ForTileGrid按AltitudeLayer渲染顺序:蓝图>Pawn>物品>建筑>植物>区域>地形）
 │   ├── SymbolDictionary.cs    ← 词表驱动符号字典 — 每次启动重建，无缓存
 │   ├── MapChunker.cs          ← Chunk索引↔世界坐标转换（TryParseChunkId/GetChunkByIndex等）
 │   ├── MapChunk.cs            ← Chunk数据模型
@@ -101,12 +101,40 @@ RimWorld 的 `IntVec3(x, y, z)` 字段含义（源码 `IntVec3.cs`, `CellRect.cs
 - `fallback_pool` — 未使用字符兜底池，供运行时新增 def（mod 更新）取用
 
 **工作流**：
-1. `scripts/generate_symbols.py --pool-size 4000` — 从 RimWorld XML 生成 symbols + fallback_pool
-2. AI 手工编辑 `Symbols.json`，将核心 Def 的字符替换为语义匹配的 ASCII 符号
-3. `scripts/check_symbols.py` — 校验：一对一映射、fallback_pool 无重复、无固定网格冲突
+1. `scripts/generate_symbols.py --pool-size 4000` — 从 RimWorld XML 生成 symbols + fallback_pool，PRESET_MAP 中 ~135 个核心 Def 使用手工指定语义字符
+2. AI 手动编辑 PRESET_MAP 字典或 `Symbols.json` 直接修改字符映射
+3. `scripts/check_symbols.py` — 校验：一对一映射、fallback_pool 无重复、无私有区字符
 
-**运行时**：`SymbolDictionary.Initialize()` 每次启动直接读词表重建，无缓存。
-词表缺失或损坏直接抛异常。Rebuild 分两轮：第一轮从 `symbols` 注册，第二轮缺的 def 从 `fallback_pool` 取（`RemoveAt(0)`）。兜底池耗尽抛异常要求重新生成。C# 不含任何硬编码符号池。
+**PRESET_MAP**（`generate_symbols.py` 内嵌）：~135 个核心 def→char 映射，涵盖全部 5 类（Terrain/Building/Item/Plant/Pawn）。生成时自检无冲突，优先分配。
+
+**字符池**（`build_pool()`）：按语义分区组织的 Unicode 区块：
+
+| 分区 | 范围 | 语义 |
+|------|------|------|
+| 结构 | U+2500-257F | 建筑结构 |
+| 防御 | U+2580-259F | 防御与大型建筑 |
+| 家具 | U+25A0-25FF | 家具与资源 |
+| 科技 | U+2200-22FF | 科技与机械 |
+| 电力 | U+2600-26FF | 电力与特殊设施 |
+| 艺术 | U+2700-27BF | 艺术与医疗 |
+| 作物 | U+03B1-03C9 | 作物植物（希腊字母） |
+| 流向 | U+2190-21FF | 流向类设施 |
+
+**排除字符**：私有区(U+E000-U+F8FF)、代理区、控制字符、`"` `'`（JSON 解析冲突）。
+
+**运行时**：`SymbolDictionary.Initialize()` 每次启动直接读词表重建，无缓存。词表缺失/损坏直接抛异常。C# 不含硬编码符号池。
+
+**ForTileGrid 渲染层**（匹配游戏 `AltitudeLayer`，高 Y 优先）：
+
+| 层 | AltitudeLayer | Y 坐标 | 字符来源 |
+|----|--------------|-------|---------|
+| 蓝图/框架 | Blueprint | 9.51 | 固定 `∎` |
+| 生物 (Pawn) | Pawn | 8.42 | `SymbolDictionary` |
+| 物品/尸体 | Item | 6.59 | `SymbolDictionary` |
+| 建筑 | Building | 5.49 | `SymbolDictionary` |
+| 植物 | LowPlant | 4.02 | `SymbolDictionary` |
+| 区域 | Zone | 3.29 | 固定 `=`/`S` |
+| 地形 | Terrain | 0.73 | `SymbolDictionary`（兜底） |
 
 **固定网格**（不经过词表，字符硬编码）：
 - `fertility_grid` / `temperature_grid` / `pollution_grid` 使用 `▓▒░·○◎●█P.?` 等字符
