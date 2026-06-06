@@ -27,19 +27,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                         break;
                     case SdkResultMessage rm:
                         result.Add(UiMessage.Result(rm.Subtype, rm.StopReason));
-                        // 从 result 消息取最终精确的 Token 统计 + 耗时
-                        if (rm.Usage != null)
-                        {
-                            TokenUsageTracker.CurrentInputTokens = rm.Usage.InputTokens;
-                            TokenUsageTracker.Record(rm.Usage.InputTokens, rm.Usage.OutputTokens,
-                                rm.Usage.CacheReadInputTokens ?? 0, rm.Usage.CacheCreationInputTokens ?? 0,
-                                rm.DurationMs ?? 0);
-                        }
-                        else
-                        {
-                            // 降级：至少记录耗时
-                            TokenUsageTracker.Record(0, 0, 0, 0, rm.DurationMs ?? 0);
-                        }
+                        // 记录会话耗时
+                        TokenUsageTracker.Record(0, 0, 0, 0, rm.DurationMs ?? 0);
                         break;
                     case SdkSystemInitMessage init:
                         result.Add(UiMessage.SystemInit(init.Model, init.SessionId,
@@ -127,6 +116,14 @@ namespace RimWorldAgent.Core.AgentRuntime
                         outList.Add(UiMessage.TextDelta(evt.Text));
                     else if (evt.Thinking != null)
                         outList.Add(UiMessage.ThinkingDelta(evt.Thinking));
+                    break;
+                case "message_delta":
+                    if (evt.Usage != null)
+                    {
+                        TokenUsageTracker.CurrentInputTokens = evt.Usage.InputTokens;
+                        TokenUsageTracker.Record(evt.Usage.InputTokens, evt.Usage.OutputTokens,
+                            evt.Usage.CacheReadInputTokens ?? 0, evt.Usage.CacheCreationInputTokens ?? 0, 0);
+                    }
                     break;
             }
         }

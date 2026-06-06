@@ -74,7 +74,6 @@ namespace RimWorldAgent.Core.Mcp
 
         public async Task<string> CallToolAsync(string name, Dictionary<string, JsonElement>? args = null)
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
             var client = await GetClientAsync();
 
             IReadOnlyDictionary<string, object?>? sdkArgs = null;
@@ -86,7 +85,6 @@ namespace RimWorldAgent.Core.Mcp
             }
 
             var result = await client.CallToolAsync(name, sdkArgs);
-            CoreLog.Debug($"[McpClient] {name} 总耗时 {sw.Elapsed.TotalMilliseconds:F0}ms");
 
             var sb = new StringBuilder();
             foreach (var c in result.Content)

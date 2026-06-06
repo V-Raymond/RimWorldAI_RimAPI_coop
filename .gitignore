@@ -7,3 +7,4 @@ obj/
 publish/
 claude-sessions/
 __pycache__/
+*.txt

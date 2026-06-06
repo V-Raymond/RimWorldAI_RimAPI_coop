@@ -58,6 +58,7 @@
     <!-- WebUI 静态文件 -->
     <MakeDir Directories="..\publish\RimWorldAgentUI\1.6\Assemblies\WebUI" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\resource\WebUI\index.html" DestinationFolder="..\publish\RimWorldAgentUI\1.6\Assemblies\WebUI" Condition="Exists('$(MSBuildProjectDirectory)\resource\WebUI\index.html')" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\resource\WebUI\index-v2.html" DestinationFolder="..\publish\RimWorldAgentUI\1.6\Assemblies\WebUI" Condition="Exists('$(MSBuildProjectDirectory)\resource\WebUI\index-v2.html')" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\README.md" DestinationFolder="..\publish\RimWorldAgentUI" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
   </Target>
 

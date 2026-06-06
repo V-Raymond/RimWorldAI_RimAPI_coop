@@ -68,14 +68,18 @@ namespace RimWorldMCP.Tools
                             : "活跃";
                         sb.AppendLine($"[{i + 1}] {e.LabelShort} | {e.KindLabel} | ({e.Position.x},{e.Position.z}) | {status} | ID:{e.thingIDNumber}");
 
-                        // 移动预测
+                        // 攻击目标（始终显示）
+                        var enemyTarget = e.mindState?.enemyTarget as Pawn;
+                        var hasTargetLine = false;
+                        if (enemyTarget != null && !e.Downed && colonistLookup.TryGetValue(enemyTarget.thingIDNumber, out var tPawn))
+                        {
+                            sb.Append($"    ▸ 目标: {tPawn.LabelShort}(ID:{tPawn.thingIDNumber})");
+                            hasTargetLine = true;
+                        }
+
+                        // 移动预测（仅 show_movement）
                         if (showMovement && !e.Downed)
                         {
-                            var enemyTarget = e.mindState?.enemyTarget as Pawn;
-                            if (enemyTarget != null && colonistLookup.TryGetValue(enemyTarget.thingIDNumber, out var tPawn))
-                            {
-                                sb.Append($"    ▸ 目标: {tPawn.LabelShort}(ID:{tPawn.thingIDNumber})");
-                            }
                             if (e.pather?.MovingNow == true)
                             {
                                 if (e.pather.Destination.IsValid)
@@ -94,6 +98,10 @@ namespace RimWorldMCP.Tools
                                         sb.Append(j < nodes.Count - 1 ? "→" : "").Append($"({nodes[j].x},{nodes[j].z})");
                                 }
                             }
+                            sb.AppendLine();
+                        }
+                        else if (hasTargetLine)
+                        {
                             sb.AppendLine();
                         }
                     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -33,6 +34,9 @@ public class CcbWebSocket : IDisposable
     private const int MaxReconnectDelayMs = 60000;
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+
+    /// <summary>WS 通信日志文件路径，设为 null 禁用</summary>
+    public static string? WsLogFilePath { get; set; }
 
     /// <summary>思考模式：adaptive / disabled</summary>
     public string ThinkingMode { get; set; } = "adaptive";
@@ -170,10 +174,23 @@ public class CcbWebSocket : IDisposable
             var ws = _ws;
             if (ws?.State != WebSocketState.Open) return;
             var json = JsonSerializer.Serialize(obj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            WsLog("→", json);
             var bytes = Encoding.UTF8.GetBytes(json);
             await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts?.Token ?? CancellationToken.None);
         }
         finally { _sendLock.Release(); }
+    }
+
+    private static void WsLog(string dir, string json)
+    {
+        var path = WsLogFilePath;
+        if (path == null) return;
+        try
+        {
+            var line = $"[{DateTime.UtcNow:O}] {dir} {json}\n";
+            File.AppendAllText(path, line, Encoding.UTF8);
+        }
+        catch {}
     }
 
     private async Task ReceiveLoop(CancellationToken ct)
@@ -207,6 +224,7 @@ public class CcbWebSocket : IDisposable
 
     private void ProcessMessage(string json)
     {
+        WsLog("←", json);
         try
         {
             var msg = SdkMessage.FromJson(json);

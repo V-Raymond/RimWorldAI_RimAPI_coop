@@ -90,7 +90,7 @@ namespace RimWorldMCP.Tools
                     bool isDrafted = pawn.drafter?.Drafted == true;
 
                     // 被敌人瞄准检测
-                    bool isTargeted = IsTargetedByEnemy(pawn);
+                    string targetedBy = GetTargetedByEnemyText(pawn);
 
                     // 精神态
                     string mentalStateStr = GetMentalState(pawn);
@@ -102,7 +102,8 @@ namespace RimWorldMCP.Tools
                     if (isFleeing) tags.Add("逃跑中!");
                     if (pawn.Downed) tags.Add("倒地");
                     if (isDrafted) tags.Add("征召中");
-                    if (isTargeted) tags.Add("被敌人瞄准");
+                    if (!string.IsNullOrEmpty(targetedBy)) tags.Add(targetedBy);
+                    if (!string.IsNullOrEmpty(mentalStateStr)) tags.Add(mentalStateStr);
                     if (!pawn.Awake())
                         tags.Add("睡眠中");
                     string statusTag = tags.Count > 0 ? " **" + string.Join(" ", tags) + "**" : "";
@@ -347,20 +348,22 @@ namespace RimWorldMCP.Tools
             return false;
         }
 
-        private static bool IsTargetedByEnemy(Pawn pawn)
+        private static string GetTargetedByEnemyText(Pawn pawn)
         {
             try
             {
                 var map = pawn.Map;
-                if (map == null) return false;
+                if (map == null) return "";
+                var names = new List<string>();
                 foreach (var p in map.mapPawns.AllPawnsSpawned)
                 {
                     if (p.Faction == null || !p.Faction.HostileTo(Faction.OfPlayer)) continue;
-                    if (p.CurJob?.targetA.Thing == pawn) return true;
+                    if (p.CurJob?.targetA.Thing == pawn)
+                        names.Add($"{p.LabelShort}(ID:{p.thingIDNumber},{p.Position.x},{p.Position.z})");
                 }
-                return false;
+                return names.Count > 0 ? $"←被{string.Join("、", names)}瞄准" : "";
             }
-            catch (Exception ex) { McpLog.Warn($"[GetColonists] IsTargetedByEnemy 读取失败: {ex.Message}"); return false; }
+            catch (Exception ex) { McpLog.Warn($"[GetColonists] 读取瞄准信息失败: {ex.Message}"); return ""; }
         }
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;
     }

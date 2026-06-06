@@ -31,6 +31,7 @@ namespace RimWorldAgent.Core.AgentRuntime
         public long TokenBudgetLimit { get; set; }
         public string ThinkingMode { get; set; } = "adaptive";
         public string ThinkingEffort { get; set; } = "high";
+        public bool LogSdkMessages { get; set; }
     }
 
     /// <summary>Agent 引擎 — CCB 生命周期 + WS + MCP + 调度循环。EXE/MOD 共享。</summary>
@@ -139,7 +140,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 _ccb = new Ccb(_cfg.CcbDir, _cfg.ProjectPath, _cfg.CcbPort,
                     mcpPort: _cfg.McpPort, agentMcpPort: _cfg.AgentMcpPort,
                     ccbToken: _cfg.CcbToken, modelName: _cfg.ModelName,
-                    budgetLimit: _cfg.TokenBudgetLimit, budgetAction: "Block");
+                    budgetLimit: _cfg.TokenBudgetLimit, budgetAction: "Block",
+                    logSdk: _cfg.LogSdkMessages);
                 if (_cfg.CcbAutoStart)
                 {
                     _logInfo("[AgentEngine] 调用 _ccb.Start()...");

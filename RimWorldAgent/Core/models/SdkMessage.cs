@@ -359,7 +359,7 @@ namespace RimWorldAgent.Core.CcbManager
     /// </summary>
     public class SdkStreamEvent
     {
-        /// <summary>事件类型：content_block_start / content_block_delta / content_block_stop</summary>
+        /// <summary>事件类型：content_block_start / content_block_delta / content_block_stop / message_delta</summary>
         public string EventType { get; set; } = "";
         /// <summary>内容块在回复中的索引位置</summary>
         public int Index { get; set; }
@@ -375,6 +375,8 @@ namespace RimWorldAgent.Core.CcbManager
         public string? ToolUseId { get; set; }
         /// <summary>工具名称（tool_use block_start 时赋值）</summary>
         public string? ToolName { get; set; }
+        /// <summary>Token 统计（message_delta 事件时赋值）</summary>
+        public SdkUsage? Usage { get; set; }
 
         public SdkStreamEvent() { }
         public SdkStreamEvent(string eventType, int index, string? blockType = null)
@@ -414,6 +416,7 @@ namespace RimWorldAgent.Core.CcbManager
                 "content_block_start" => ParseBlockStart(root, idx),
                 "content_block_delta" => ParseBlockDelta(root, idx),
                 "content_block_stop" => new SdkStreamEvent("content_block_stop", idx),
+                "message_delta" => ParseMessageDelta(root, idx),
                 _ => new SdkStreamEvent(et, idx)
             };
         }
@@ -446,6 +449,16 @@ namespace RimWorldAgent.Core.CcbManager
                 "input_json_delta" => SdkStreamEvent.InputJsonDelta(idx, delta.TryGetProperty("partial_json", out var pj) ? pj.GetString() ?? "" : ""),
                 _ => new SdkStreamEvent("content_block_delta", idx)
             };
+        }
+
+        private static SdkStreamEvent ParseMessageDelta(JsonElement root, int idx)
+        {
+            var evt = new SdkStreamEvent("message_delta", idx);
+            if (root.TryGetProperty("usage", out var usage))
+            {
+                evt.Usage = JsonSerializer.Deserialize<SdkUsage>(usage.GetRawText());
+            }
+            return evt;
         }
 
         public override void Write(Utf8JsonWriter writer, SdkStreamEvent value, JsonSerializerOptions options)

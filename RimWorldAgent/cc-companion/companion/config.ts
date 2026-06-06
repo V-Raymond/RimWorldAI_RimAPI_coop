@@ -9,6 +9,7 @@ export interface CompanionConfig {
   modelName: string;
   settingSources: string[];
   skills: string[];
+  logSdk: boolean;
 }
 
 export const Thinking = {
@@ -32,6 +33,7 @@ export const CONFIG: CompanionConfig = {
     ? process.env.CCB_SETTING_SOURCES.split(',').map(s => s.trim())
     : ['user', 'project', 'local'],
   skills: parseSkillsJson(process.env.CCB_SKILLS),
+  logSdk: process.env.CCB_LOG_SDK === '1' || process.env.CCB_LOG_SDK === 'true',
 };
 
 export function parseArgs(argv: string[]): void {
@@ -48,5 +50,6 @@ export function parseArgs(argv: string[]): void {
       try { CONFIG.skills = JSON.parse(raw); }
       catch (err: any) { console.error(`[config] 解析 --skills 参数失败: ${err.message} raw=${raw.substring(0, 200)}`); }
     }
+    else if (a === '--log-sdk') CONFIG.logSdk = true;
   }
 }

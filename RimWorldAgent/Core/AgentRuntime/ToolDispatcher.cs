@@ -197,8 +197,21 @@ namespace RimWorldAgent.Core.AgentRuntime
             {
                 try
                 {
-                    var speed = await AgentOrchestrator.SessionMcp.CallTool("get_game_speed");
-                    _lastIsPaused = speed != null && speed.IndexOf("已暂停", StringComparison.Ordinal) >= 0;
+                    var json = await AgentOrchestrator.SessionMcp.CallTool("get_game_speed");
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            _lastIsPaused = root.TryGetProperty("paused", out var p) && p.GetBoolean();
+                        }
+                        catch (JsonException)
+                        {
+                            // 兼容旧版文本格式
+                            _lastIsPaused = json.IndexOf("已暂停", StringComparison.Ordinal) >= 0;
+                        }
+                    }
                 }
                 catch (Exception ex) { CoreLog.Debug($"[ToolDispatcher] 查询游戏速度失败: {ex.GetType().Name}: {ex.Message}"); }
             }

@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.Mcp;
@@ -27,8 +28,26 @@ namespace RimWorldAgent.Core.AgentRuntime
         {
             try
             {
-                var speed = await _mcp.CallTool("get_game_speed");
-                _isPaused = speed != null && speed.IndexOf("已暂停", StringComparison.Ordinal) >= 0;
+                var json = await _mcp.CallTool("get_game_speed");
+                if (!string.IsNullOrEmpty(json))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        _isPaused = root.TryGetProperty("paused", out var p) && p.GetBoolean();
+                        if (root.TryGetProperty("tick", out var t) && t.TryGetInt32(out var tick))
+                        {
+                            Volatile.Write(ref _gameTick, tick);
+                            AgentOrchestrator.GameTick = tick;
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // 兼容旧版文本格式
+                        _isPaused = json.IndexOf("已暂停", StringComparison.Ordinal) >= 0;
+                    }
+                }
             }
             catch (Exception ex) { CoreLog.Info($"[RemoteGameState] 查询暂停状态失败: {ex.Message}"); }
         }

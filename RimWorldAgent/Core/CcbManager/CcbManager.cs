@@ -22,6 +22,7 @@ namespace RimWorldAgent.Core.CcbManager
         private readonly string? _modelName;
         private readonly long _budgetLimit;
         private readonly string _budgetAction;
+        private readonly bool _logSdk;
         private bool _ready;
         private IntPtr _jobHandle = IntPtr.Zero;
         private bool _starting; // 防止 Start() 重入
@@ -32,7 +33,7 @@ namespace RimWorldAgent.Core.CcbManager
         /// <summary>TickAndRestart 重启了 companion 进程时为 true，调用方检查后应清除</summary>
         public bool WasRestarted { get; set; }
 
-        public CcbManager(string companionDir, string projectPath, int ccbPort = 19998, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block")
+        public CcbManager(string companionDir, string projectPath, int ccbPort = 19998, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block", bool logSdk = false)
         {
             _companionDir = companionDir;
             _projectPath = projectPath;
@@ -43,6 +44,7 @@ namespace RimWorldAgent.Core.CcbManager
             _modelName = modelName;
             _budgetLimit = budgetLimit;
             _budgetAction = budgetAction;
+            _logSdk = logSdk;
             _nodeExe = nodeExe ?? CompanionInstaller.FindNodeExe();
         }
 
@@ -88,6 +90,8 @@ namespace RimWorldAgent.Core.CcbManager
                 + $" --project-path \"{_projectPath}\"";
             if (!string.IsNullOrEmpty(_modelName))
                 args += $" --model-name \"{_modelName}\"";
+            if (_logSdk)
+                args += " --log-sdk";
 
             try
             {
@@ -103,6 +107,7 @@ namespace RimWorldAgent.Core.CcbManager
                 };
                 psi.Environment["CCB_HOST"] = "0.0.0.0";
                 psi.Environment["CCB_PORT"] = _ccbPort.ToString();
+                psi.Environment["CCB_LOG_SDK"] = _logSdk ? "1" : "0";
                 psi.Environment["CCB_TOKEN_BUDGET_LIMIT"] = _budgetLimit.ToString();
                 psi.Environment["CCB_TOKEN_BUDGET_ACTION"] = _budgetAction;
                 if (!string.IsNullOrEmpty(_ccbToken))

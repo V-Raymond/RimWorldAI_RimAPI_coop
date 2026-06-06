@@ -46,7 +46,7 @@
   }
   #app {
     display: grid;
-    grid-template-columns: 120px 1fr minmax(400px, 700px) 1fr 220px;
+    grid-template-columns: auto 1fr minmax(400px, 700px) 1fr 220px;
     height: 100dvh; width: 100%;
   }
   #sidebar { grid-column: 1; }
@@ -57,11 +57,14 @@
   }
   #rightbar { grid-column: 5; }
   #sidebar {
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 10px 6px;
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 200px; max-width: 360px;
     border-right: 1px solid var(--border);
     background: var(--card);
-    overflow-y: auto;
+    overflow: hidden;
+  }
+  #sb-stats {
+    flex: 1; overflow-y: auto; padding: 0 6px 10px;
   }
   #rightbar {
     display: flex; flex-direction: column;
@@ -75,6 +78,7 @@
     font-size: 12px; font-weight: 700; color: var(--text-strong);
     border-bottom: 1px solid var(--border);
     margin-bottom: 4px;
+    flex-shrink: 0;
   }
   .sb-cat {
     padding: 3px 6px; margin: 1px 0;
@@ -573,17 +577,15 @@
     }
     #sidebar {
       grid-column: 1; grid-row: 1;
-      flex-direction: row; gap: 6px;
+      flex-direction: row; gap: 4px;
       padding: 6px 8px; overflow-x: auto;
       border-right: none; border-bottom: 1px solid var(--border);
       flex-shrink: 0;
+      min-width: 0; max-width: none;
     }
-    .sb-stat {
-      flex: 0 0 auto; min-width: 52px;
-      padding: 4px 8px; text-align: center;
-    }
+    #sb-stats { flex-direction: row; gap: 4px; overflow-y: hidden; overflow-x: auto; padding: 0; }
+    .sb-cat { flex: 0 0 auto; min-width: 80px; padding: 4px 8px; }
     .sb-hdr { font-size: 11px; padding: 6px 2px; }
-    .sb-stat .sb-label { font-size: 9px; }
     #main { grid-column: 1; grid-row: 2; }
     #rightbar { display: none; }
 
@@ -923,6 +925,9 @@
       hideReading();
       loadHistory();
       requestToolStats();
+      // 每 5 秒轮询工具统计
+      if (window._statsPoll) clearInterval(window._statsPoll);
+      window._statsPoll = setInterval(requestToolStats, 5000);
     };
 
     ws.onmessage = (event) => {
@@ -930,6 +935,7 @@
     };
 
     ws.onclose = () => {
+      if (window._statsPoll) { clearInterval(window._statsPoll); window._statsPoll = null; }
       connected = false;
       setStatus('disconnected');
       sendBtn.disabled = true;
@@ -1770,21 +1776,6 @@
   });
 
   // ===== Tool Stats（左侧栏） =====
-  var TOOL_CAT = {
-    '地图查询': ['get_tile_grid','get_tile_detail','get_structure_layout','fertility_grid','terrain_grid','temperature_grid','pollution_grid','search_map','find_pawn','find_enemies','find_equipment','get_thing_def','search_thing_def'],
-    '殖民者': ['get_colonists','get_colonist_needs','get_colonist_health','get_work_priorities','set_work_priority'],
-    '设施建造': ['designate_build','designate_room','designate_mine','designate_deconstruct','designate_clear_plants','create_stockpile','create_growing_zone','delete_zone','expand_zone','cancel_build','cancel_task','uninstall_building','install_minified_thing'],
-    '装备战斗': ['equip_pawn','draft_pawn','attack_pawn','force_attack','haul_item','pick_up_item','drop_equipment','strip_pawn','arrest_pawn','rescue_pawn','capture_pawn','force_dress','drop_carried'],
-    '生产研究': ['create_production_bill','list_recipes','get_bills','manage_bill','list_research_projects','set_research_project','get_research_progress']
-  };
-
-  function classifyTool(name) {
-    for (var cat in TOOL_CAT) {
-      if (TOOL_CAT[cat].indexOf(name) >= 0) return cat;
-    }
-    return '其他';
-  }
-
   function requestToolStats() {
     if (!ws || !connected) return;
     ws.send(JSON.stringify({ type: 'tool_stats', from_day: 0, to_day: 2147483647 }));
@@ -1795,43 +1786,33 @@
     if (dayEl) dayEl.textContent = msg.game_day || '--';
 
     var stats = msg.stats || [];
-    // 按分类聚合
-    var catMap = {};
+    // 按 tool_name 聚合，无需分类
+    var toolMap = {};
     var grandTotal = 0;
     for (var i = 0; i < stats.length; i++) {
       var s = stats[i];
-      var cat = classifyTool(s.tool_name);
-      if (!catMap[cat]) catMap[cat] = 0;
-      catMap[cat] += s.call_count;
+      if (!toolMap[s.tool_name]) toolMap[s.tool_name] = 0;
+      toolMap[s.tool_name] += s.call_count;
       grandTotal += s.call_count;
     }
 
-    // 排序：按次数降序，地图查询排第一
-    var order = ['地图查询','设施建造','殖民者','装备战斗','生产研究','其他'];
-    var cats = Object.keys(catMap).sort(function(a, b) {
-      var ai = order.indexOf(a), bi = order.indexOf(b);
-      if (ai < 0) ai = 999; if (bi < 0) bi = 999;
-      if (ai !== bi) return ai - bi;
-      return catMap[b] - catMap[a];
-    });
-
+    // 按次数降序
+    var tools = Object.keys(toolMap).sort(function(a, b) { return toolMap[b] - toolMap[a]; });
     var maxCount = 1;
-    for (var k in catMap) { if (catMap[k] > maxCount) maxCount = catMap[k]; }
+    for (var k in toolMap) { if (toolMap[k] > maxCount) maxCount = toolMap[k]; }
 
     var container = document.getElementById('sb-stats');
     if (!container) return;
     container.innerHTML = '';
 
-    for (var j = 0; j < cats.length; j++) {
-      var c = cats[j];
-      var count = catMap[c];
-      var pct = grandTotal > 0 ? Math.round(count / grandTotal * 100) : 0;
-      var isWarn = c === '地图查询' && pct > 50;
+    for (var j = 0; j < tools.length; j++) {
+      var name = tools[j];
+      var count = toolMap[name];
       var barW = Math.max(2, Math.round(count / maxCount * 100));
       var div = document.createElement('div');
-      div.className = 'sb-cat' + (isWarn ? ' warn' : '');
+      div.className = 'sb-cat';
       div.innerHTML =
-        '<div><span class="sb-cat-name">' + esc(c) + '</span><span class="sb-cat-count">' + count + '</span></div>' +
+        '<div><span class="sb-cat-name" title="' + esc(name) + '">' + esc(name) + '</span><span class="sb-cat-count">' + count + '</span></div>' +
         '<div class="sb-bar"><div class="sb-bar-inner" style="width:' + barW + '%"></div></div>';
       container.appendChild(div);
     }

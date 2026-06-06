@@ -78,6 +78,7 @@ namespace RimWorldAgent
                     TokenBudgetLimit = settings?.TokenBudgetLimit ?? 0,
                     ThinkingMode = settings?.ThinkingMode ?? "adaptive",
                     ThinkingEffort = settings?.ThinkingEffort ?? "high",
+                    LogSdkMessages = settings?.LogSdkMessages ?? false,
                 };
 
                 _engine = new AgentEngine(cfg, dbStore, gameState,
@@ -86,11 +87,7 @@ namespace RimWorldAgent
                     logDebug: msg => SafeLog.Info($"[agent-core] {msg}"),
                     logWarn: msg => SafeLog.Warning($"[agent-core] {msg}"));
 
-                await _engine.InitAsync();
-                CoreLog.Info($"[agent-mod] 内部工具已注册 ({InternalToolRegistry.Instance.All.Count}): {string.Join(", ", InternalToolRegistry.Instance.All.Select(t => t.Name))}");
-
-                _dbStore = dbStore;
-
+                // 先启动 UIMessageBus + ConversationStore，确保 InitAsync 触发 Token 推送时 WS 已就绪
                 if (settings?.BridgeHost != "disabled")
                 {
                     var bridgeHost = settings?.BridgeHost ?? "0.0.0.0";
@@ -98,10 +95,18 @@ namespace RimWorldAgent
                     UIMessageBus.Start(bridgeHost, bridgePort);
                 }
 
+                _convStore = new MemoryConversationStore();
+                AgentLoop.ConversationStore = _convStore;
+
+                await _engine.InitAsync();
+                CoreLog.Info($"[agent-mod] 内部工具已注册 ({InternalToolRegistry.Instance.All.Count}): {string.Join(", ", InternalToolRegistry.Instance.All.Select(t => t.Name))}");
+
+                _dbStore = dbStore;
+
                 if (_engine.CcbWs != null)
                 {
-                    _convStore = new MemoryConversationStore();
-                    AgentLoop.ConversationStore = _convStore;
+                    if (settings?.LogCcbWsMessages == true)
+                        CcbWebSocket.WsLogFilePath = Path.Combine(projectPath!, "ccb-ws-log.txt");
                     AgentLoop.WireUIMessageBus(_engine.CcbWs);
                 }
                 else

@@ -34,48 +34,54 @@ namespace RimWorldMCP.MapRendering
 
             var color = ParseColor(colorName);
 
-            if (!_active.TryGetValue(map, out var list))
+            lock (_active)
             {
-                list = new List<Observation>();
-                _active[map] = list;
+                if (!_active.TryGetValue(map, out var list))
+                {
+                    list = new List<Observation>();
+                    _active[map] = list;
+                }
+                list.Add(new Observation
+                {
+                    Rect = rect,
+                    Color = color,
+                    ExpireRealTime = Time.realtimeSinceStartup + DurationSec
+                });
             }
-            list.Add(new Observation
-            {
-                Rect = rect,
-                Color = color,
-                ExpireRealTime = Time.realtimeSinceStartup + DurationSec
-            });
         }
 
         /// <summary>每帧调用——绘制活跃观察 + 清理过期项（纯实时钟，不受暂停影响）</summary>
         public static void Tick(Map? map)
         {
             if (map == null) return;
-            if (!_active.TryGetValue(map, out var list)) return;
-
-            var nowReal = Time.realtimeSinceStartup;
-            for (int i = list.Count - 1; i >= 0; i--)
+            lock (_active)
             {
-                if (nowReal >= list[i].ExpireRealTime)
+                if (!_active.TryGetValue(map, out var list)) return;
+
+                var nowReal = Time.realtimeSinceStartup;
+                for (int i = list.Count - 1; i >= 0; i--)
                 {
-                    list.RemoveAt(i);
-                    continue;
+                    if (nowReal >= list[i].ExpireRealTime)
+                    {
+                        list.RemoveAt(i);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var obs = list[i];
+                        var mat = GetOrCreateMaterial(obs.Color);
+                        GenDraw.DrawCellRect(obs.Rect, Vector3.zero, mat);
+                    }
+                    catch (Exception ex)
+                    {
+                        McpLog.Warn($"[AiObservationOverlay] 绘制标记失败: {ex.Message}");
+                    }
                 }
 
-                try
-                {
-                    var obs = list[i];
-                    var mat = GetOrCreateMaterial(obs.Color);
-                    GenDraw.DrawCellRect(obs.Rect, Vector3.zero, mat);
-                }
-                catch (Exception ex)
-                {
-                    McpLog.Warn($"[AiObservationOverlay] 绘制标记失败: {ex.Message}");
-                }
+                if (list.Count == 0)
+                    _active.Remove(map);
             }
-
-            if (list.Count == 0)
-                _active.Remove(map);
         }
 
         private static Material GetOrCreateMaterial(Color color)

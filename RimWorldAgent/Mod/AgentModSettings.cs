@@ -33,6 +33,10 @@ namespace RimWorldAgent
         public string BridgeHost = "127.0.0.1";
         public int BridgePort = 19999;
 
+        // 日志
+        public bool LogSdkMessages;
+        public bool LogCcbWsMessages;
+
         public override void ExposeData()
         {
             base.ExposeData();
@@ -51,6 +55,8 @@ namespace RimWorldAgent
             Scribe_Values.Look(ref CcbAutoInstall, "ccbAutoInstall", true);
             Scribe_Values.Look(ref BridgeHost, "bridgeHost", "127.0.0.1");
             Scribe_Values.Look(ref BridgePort, "bridgePort", 19999);
+            Scribe_Values.Look(ref LogSdkMessages, "logSdkMessages", false);
+            Scribe_Values.Look(ref LogCcbWsMessages, "logCcbWsMessages", false);
         }
     }
 }

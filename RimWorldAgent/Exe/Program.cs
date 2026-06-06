@@ -81,20 +81,26 @@ namespace RimWorldAgent
             Console.WriteLine("等待游戏启动...");
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; _cts.Cancel(); };
 
-            await engine.InitAsync();
-
-            // 启动 UIMessageBus（Web UI 和游戏内 Dialog 的 WS 通信总线）
+            // 先启动 UIMessageBus + SQLite，确保 InitAsync 触发 Token 推送时 WS 已就绪
             var bridgePort = 19999;
             UIMessageBus.Start(port: bridgePort);
             Console.WriteLine($"[Core] UIMessageBus: ws://0.0.0.0:{bridgePort}");
 
-            // 创建 SQLite 会话存储
             AgentLoop.ConversationStore = new SqliteConversationStore(
                 Path.Combine(projectPath, "conversation.db"));
+
+            await engine.InitAsync();
 
             // CCB ↔ UIMessageBus 双向中继（SDK↔UiMessage 转换在 AgentCore）
             if (engine.CcbWs != null)
                 AgentLoop.WireUIMessageBus(engine.CcbWs);
+
+            // 初始化完成后显式推送一次预算状态
+            UIMessageBus.PushUiMessage(UiMessage.BudgetStatus(
+                TokenUsageTracker.TotalAllTokens, AgentLoop.BudgetLimit, "Idle",
+                TokenUsageTracker.TotalCacheReadTokens, TokenUsageTracker.TotalInputTokens,
+                TokenUsageTracker.TotalCacheCreateTokens, 0,
+                TokenUsageTracker.CurrentInputTokens));
 
             Console.WriteLine("Agent Main Loop 启动 (Ctrl+C 退出)");
 

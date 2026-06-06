@@ -146,7 +146,6 @@ namespace RimWorldAgent.Core.Data
             {
                 return _entries
                     .Where(e => e.Role == ConvRole.ToolCall
-                        && e.GameDay > 0
                         && (fromDay == 0 || e.GameDay >= fromDay)
                         && (toDay == int.MaxValue || e.GameDay <= toDay))
                     .GroupBy(e => new { e.GameDay, e.ToolName })

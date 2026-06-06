@@ -35,7 +35,7 @@ async function runTest(tc: TestCase) {
 
   const options = {
     ...tc.options,
-    model:"GLM-5.1",
+    model:"deepseek-v4-flash",
     permissionMode: 'bypassPermissions' as const,
     allowDangerouslySkipPermissions: true,
     maxTurns: 1,

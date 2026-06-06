@@ -300,7 +300,6 @@ namespace RimWorldAgent.Core.Data
                     @"SELECT game_day, tool_name, COUNT(*) AS call_count
                       FROM conversation
                       WHERE role = 'tool_call'
-                        AND game_day > 0
                         AND (@fromDay = 0 OR game_day >= @fromDay)
                         AND (@toDay = 2147483647 OR game_day <= @toDay)
                       GROUP BY game_day, tool_name

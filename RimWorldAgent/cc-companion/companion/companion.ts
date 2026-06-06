@@ -9,7 +9,7 @@
  *                    SDK 消息 (type: assistant / stream_event / result / system / user / aborted)
  */
 
-import { writeFileSync, unlinkSync } from 'fs';
+import { writeFileSync, unlinkSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -26,6 +26,20 @@ function log(text: string) {
 
 function sendJson(ws: WebSocket, obj: Record<string, unknown>) {
   if (ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+let sdkLogPath: string | null = null;
+if (CONFIG.logSdk) {
+  sdkLogPath = join(CONFIG.projectPath, 'sdk-log.txt');
+  log(`SDK 日志已启用: ${sdkLogPath}`);
+}
+
+function sdkLog(dir: '→' | '←', data: string) {
+  if (!sdkLogPath) return;
+  try {
+    const now = new Date().toISOString();
+    appendFileSync(sdkLogPath, `[${now}] ${dir} ${data}\n`, 'utf8');
+  } catch {}
 }
 
 async function main() {
@@ -77,6 +91,7 @@ async function main() {
   httpServer.listen(CONFIG.port, CONFIG.host);
 
   busBroadcast = (data: string) => {
+    sdkLog('←', data);
     for (const c of wss.clients) {
       if (c.readyState === 1) c.send(data);
     }
@@ -120,6 +135,7 @@ async function main() {
           applyThinking(msg.thinking);
           log(`[CCGUI_DEBUG] chat session=${msg.session} len=${msg.text.length} buffering=${buffering} streamAborted=${streamAborted}`);
           const userMsg = { type: 'user', message: { role: 'user', content: msg.text } };
+          sdkLog('→', JSON.stringify(userMsg));
           if (buffering) {
             log(`[CCGUI_DEBUG] chat 缓冲中...`);
             pendingMessages.push(userMsg);

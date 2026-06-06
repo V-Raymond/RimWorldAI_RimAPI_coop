@@ -54,7 +54,21 @@ namespace RimWorldMCP.Tools
         public async Task<ToolResult> ExecuteAsync(JsonElement? args)
         {
             return await McpCommandQueue.DispatchAsync(() =>
-                ToolResult.Success(GetSpeedLabel()));
+            {
+                var tm = Find.TickManager;
+                var speed = GetSpeedLabel();
+                var paused = IsPaused();
+                var tick = tm?.TicksGame ?? 0;
+                var day = tick / 60000;
+                var json = JsonSerializer.Serialize(new
+                {
+                    paused,
+                    speed,
+                    tick,
+                    day
+                });
+                return ToolResult.Success(json);
+            });
         }
 
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;

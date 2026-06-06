@@ -182,6 +182,13 @@ namespace RimWorldAgent
             listing.CheckboxLabeled("自动安装 (加载时)", ref Settings.CcbAutoInstall,
                 "开启后自动检查 cc-companion/node_modules，缺失则运行 npm install。");
 
+            DrawSectionHeader(listing, "日志");
+
+            listing.CheckboxLabeled("☐ SDK 交互日志 (sdk-log.txt)", ref Settings.LogSdkMessages,
+                "开启后 companion 将 SDK 双向通信记录写入 project 目录下的 sdk-log.txt。");
+            listing.CheckboxLabeled("☐ C#↔CCB WS 日志 (ccb-ws-log.txt)", ref Settings.LogCcbWsMessages,
+                "开启后 C# 将 WebSocket 收发 JSON 记录写入 project 目录下的 ccb-ws-log.txt。");
+
             listing.End();
             Widgets.EndScrollView();
         }

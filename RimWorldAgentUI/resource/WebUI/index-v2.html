@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RimWorld Bridge Agent v2</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f9; --card: #fff; --surface: #eeeff3; --hover: #e4e6ec;
+    --text: #1a1c24; --text-strong: #0c0d14; --muted: #6f7488; --muted-subtle: #9ca1b5;
+    --border: #e2e4eb; --border-strong: #ccd0d9; --accent: #e54b4b;
+    --blue: #3570d6; --blue-bg: rgba(53,112,214,0.07); --blue-border: rgba(53,112,214,0.16);
+    --green: #1d914d; --green-bg: rgba(29,145,77,0.06); --green-border: rgba(29,145,77,0.18);
+    --amber: #c4890c; --amber-bg: rgba(196,137,12,0.06); --amber-border: rgba(196,137,12,0.18);
+    --red: #d93d3d; --cyan: #188585;
+    --mono: "Cascadia Code","Fira Code","JetBrains Mono","Noto Sans Mono","Consolas","Segoe UI Symbol",monospace;
+    --font: system-ui,-apple-system,"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    --radius-sm: 6px; --radius: 10px; --radius-lg: 14px;
+    color-scheme: light;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100dvh; overflow: hidden; background: var(--bg); }
+  body { font-family: var(--font); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  #app { display: grid; grid-template-columns: 120px 1fr minmax(400px, 700px) 1fr 220px; height: 100dvh; width: 100%; }
+  #sidebar { grid-column: 1; display: flex; flex-direction: column; gap: 6px; padding: 10px 6px; border-right: 1px solid var(--border); background: var(--card); overflow-y: auto; }
+  #main { grid-column: 3; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  #rightbar { grid-column: 5; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--card); overflow-y: auto; font-size: 12px; font-family: var(--mono); }
+
+  /* Sidebar */
+  .sb-hdr { text-align: center; padding: 8px 4px; font-size: 12px; font-weight: 700; color: var(--text-strong); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .sb-cat { padding: 3px 6px; margin: 1px 0; border-radius: var(--radius-sm); cursor: default; font-size: 11px; line-height: 1.4; }
+  .sb-cat:hover { background: var(--hover); }
+  .sb-cat-name { color: var(--muted); }
+  .sb-cat-count { float: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sb-bar { height: 3px; margin-top: 2px; border-radius: 2px; background: var(--border); }
+  .sb-bar-inner { height: 100%; border-radius: 2px; background: var(--blue); transition: width 0.3s; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-subtle); }
+
+  /* Header */
+  #header { flex-shrink: 0; padding: 14px 20px 10px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .header-row { display: flex; align-items: center; gap: 10px; }
+  #status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s, box-shadow 0.3s; }
+  #status-dot.connected { background: var(--green); box-shadow: 0 0 5px rgba(29,145,77,0.25); }
+  #status-dot.connecting { background: var(--amber); animation: dot-blink 1.2s ease-in-out infinite; }
+  #status-dot.disconnected { background: var(--red); }
+  @keyframes dot-blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+  .header-title { font-size: 14px; font-weight: 600; color: var(--text-strong); letter-spacing: -0.2px; }
+  .header-spacer { flex: 1; }
+  .header-colony { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+
+  .header-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; }
+  .hdr-budget { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; padding: 1px 8px; border-radius: 4px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+  .hdr-budget .budget-bar { display: inline-block; height: 4px; border-radius: 2px; background: var(--green); vertical-align: middle; width: 32px; transition: background 0.3s; }
+  .hdr-budget .budget-bar.warning { background: var(--amber); }
+  .hdr-budget .budget-bar.danger { background: var(--red); }
+  .hdr-budget .cache-rate { color: var(--muted); margin-left: 2px; }
+  .hdr-budget .hdr-sep { color: var(--border-strong); margin: 0 2px; }
+  .hdr-budget .ctx-window { color: var(--muted); }
+  .meta-item { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: var(--surface); color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .meta-val { color: var(--text); font-weight: 500; }
+  .scroll-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: var(--surface); cursor: pointer; font-size: 11px; color: var(--muted); user-select: none; }
+  .scroll-toggle:hover { background: var(--hover); color: var(--text); }
+  .scroll-toggle .st-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); transition: background 0.2s; }
+  .scroll-toggle.off .st-dot { background: var(--muted-subtle); }
+  .think-dd { position: relative; margin-left: auto; font-size: 11px; }
+  .think-dd .dd-btn { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 4px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+  .think-dd .dd-btn:hover { background: var(--hover); }
+  .think-dd .dd-menu { display: none; position: absolute; right: 0; top: 100%; z-index: 50; margin-top: 2px; background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 4px 0; min-width: 130px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .think-dd.open .dd-menu { display: block; }
+  .think-dd .dd-item { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; color: var(--text); white-space: nowrap; }
+  .think-dd .dd-item:hover { background: var(--surface); }
+  .think-dd .dd-sub { display: none; padding: 2px 0 2px 20px; font-size: 10px; }
+  .think-dd .dd-item.on + .dd-sub { display: block; }
+  .think-dd .dd-sub span { display: inline-block; padding: 2px 6px; margin: 1px 2px; border-radius: 3px; cursor: pointer; color: var(--muted); }
+  .think-dd .dd-sub span:hover { color: var(--text); background: var(--hover); }
+  .think-dd .dd-sub span.on { color: var(--blue); font-weight: 500; }
+
+  /* Messages */
+  #messages { flex: 1; overflow-y: auto; padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { animation: msg-in 200ms ease-out both; position: relative; }
+  @keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .msg-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; user-select: none; }
+
+  /* USER */
+  .msg-user { align-self: flex-end; max-width: 72%; }
+  .msg-user .msg-label { color: var(--blue); text-align: right; }
+  .msg-user .msg-body { background: var(--blue-bg); border: 1px solid var(--blue-border); border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg); padding: 10px 14px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; color: var(--text); }
+
+  /* AGENT */
+  .msg-agent { align-self: flex-start; max-width: 88%; }
+  .msg-agent .msg-label { color: var(--green); padding-left: 12px; }
+  .msg-agent .msg-body { background: var(--card); border: 1px solid var(--border-strong); border-left: 3px solid var(--green-border); border-radius: 4px var(--radius) var(--radius) 4px; padding: 10px 14px; font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; color: var(--text); }
+
+  /* SUB-AGENT */
+  .msg-agent.sub { margin-left: 12px; }
+  .msg-agent.sub .msg-label { color: #8b5cf0; }
+  .msg-agent.sub .msg-body { border-left-color: rgba(139,92,240,0.22); }
+  .sa-group { align-self: stretch; margin: 4px 0 4px 8px; border: 1px solid rgba(139,92,240,0.15); border-radius: var(--radius); overflow: hidden; }
+  .sa-group-header { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(139,92,240,0.04); cursor: pointer; user-select: none; font-size: 11px; color: #8b5cf0; font-weight: 500; }
+  .sa-group-header:hover { background: rgba(139,92,240,0.07); }
+  .sa-group-body { padding: 6px 6px 4px; display: flex; flex-direction: column; gap: 6px; }
+  .sa-group.collapsed .sa-group-body { display: none; }
+
+  /* THINKING */
+  .msg-thinking { align-self: stretch; margin: 2px 0; }
+  .msg-thinking .th-header { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--radius-sm); cursor: pointer; user-select: none; font-size: 11px; color: var(--muted); transition: background 0.15s; }
+  .msg-thinking .th-header:hover { background: var(--card); }
+  .msg-thinking .th-icon { font-size: 12px; transition: transform 0.2s; width: 14px; text-align: center; }
+  .msg-thinking.collapsed .th-icon { transform: rotate(-90deg); }
+  .msg-thinking .th-label { font-weight: 500; }
+  .msg-thinking .th-cursor { display: inline-block; width: 2px; height: 12px; background: var(--muted); margin-left: 2px; animation: think-cursor 0.8s ease infinite; }
+  @keyframes think-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  .msg-thinking .th-body { border-left: 2px solid var(--border-strong); margin-left: 11px; padding: 4px 0 8px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--muted); font-style: italic; white-space: pre-wrap; word-wrap: break-word; display: none; }
+  .msg-thinking:not(.collapsed) .th-body { display: block; }
+  .msg-thinking.done .th-cursor { display: none; }
+
+  /* TOOL */
+  .msg-tool { align-self: stretch; }
+  .msg-tool .msg-header { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--card); border: 1px solid var(--border-strong); border-left: 3px solid var(--amber-border); border-radius: var(--radius-sm) var(--radius-sm) 0 0; font-size: 12px; cursor: pointer; }
+  .msg-tool .msg-header .msg-label { color: var(--amber); margin-bottom: 0; font-size: 10px; }
+  .msg-tool .msg-header .tool-name { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--text); flex: 1; }
+  .msg-tool .msg-header .tool-status { font-size: 10px; font-weight: 500; margin-left: 6px; white-space: nowrap; }
+  .msg-tool .msg-body { background: var(--card); border: 1px solid var(--border-strong); border-top: none; border-left: 3px solid var(--amber-border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 8px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; color: var(--text); }
+  .tool-result-text { font-family: var(--mono); font-size: 12px; line-height: 1.5; padding: 6px 0; color: var(--text); white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--border); }
+  .tool-expand-btn { display: block; width: 100%; padding: 4px; background: var(--surface); border: none; border-top: 1px solid var(--border-strong); color: var(--muted); font-size: 11px; cursor: pointer; font-family: var(--font); transition: all 0.15s; border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+  .tool-expand-btn:hover { color: var(--text); background: var(--hover); }
+
+  /* Result */
+  .msg-result { display: flex; align-items: center; gap: 10px; margin: 0 8px; }
+  .msg-result .result-line { flex: 1; height: 1px; background: var(--border-strong); }
+  .msg-result .result-label { font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--border-strong); white-space: nowrap; user-select: none; font-family: var(--mono); }
+
+  /* Typing */
+  .typing { align-self: flex-start; display: flex; align-items: center; gap: 4px; padding: 10px 14px; }
+  .typing-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); animation: typing-bounce 1.2s ease-in-out infinite; }
+  .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing-bounce { 0%,60%,100% { opacity: 0.2; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+  /* Pill */
+  #new-msg-pill { display: none; position: sticky; bottom: 12px; padding: 6px 16px; font-size: 12px; cursor: pointer; color: #fff; background: var(--blue); border: none; border-radius: 20px; z-index: 10; width: fit-content; margin: 0 auto; font-weight: 500; transition: all 0.15s; box-shadow: 0 2px 12px rgba(53,112,214,0.3); }
+  #new-msg-pill:hover { background: #2a5db5; }
+
+  /* Compose */
+  .compose { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 10px 20px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--border); }
+  .compose .prompt { font-family: var(--mono); font-size: 15px; color: var(--muted); user-select: none; flex-shrink: 0; }
+  #chat-input { flex: 1; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; outline: none; color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5; padding: 10px 14px; min-height: 44px; max-height: 160px; resize: none; transition: border-color 0.15s; }
+  #chat-input:focus { border-color: var(--muted-subtle); }
+  #chat-input::placeholder { color: var(--muted); }
+  #send-btn { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--muted); cursor: pointer; padding: 7px 14px; font-size: 12px; font-weight: 500; transition: all 0.15s; flex-shrink: 0; }
+  #send-btn:hover:not(:disabled) { background: var(--blue); border-color: var(--blue); color: #fff; }
+  #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  #abort-btn { background: none; border: 1px solid rgba(217,61,61,0.3); border-radius: 8px; color: var(--red); cursor: pointer; padding: 7px 12px; font-size: 12px; font-weight: 500; transition: all 0.15s; flex-shrink: 0; opacity: 0.3; }
+  #abort-btn.enabled { opacity: 1; }
+  #abort-btn.enabled:hover { background: var(--red); border-color: var(--red); color: #fff; }
+  #abort-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Agent badge */
+  .header-agent { font-size: 13px; color: var(--blue); font-weight: 600; padding: 4px 12px; border-radius: 6px; background: var(--blue-bg); border: 1px solid var(--blue-border); white-space: nowrap; flex-shrink: 0; letter-spacing: 0.3px; }
+
+  /* Rightbar tasks */
+  #sdk-tasks-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+  #sdk-tasks-header .task-count { color: var(--blue); }
+  #sdk-task-list { padding: 4px 0; }
+  .sdk-task-item { display: flex; align-items: center; gap: 4px; padding: 3px 10px; font-size: 11px; border-bottom: 1px solid var(--border); }
+  .sdk-task-item:last-child { border-bottom: none; }
+  .task-status.pending { color: var(--muted); }
+  .task-status.in_progress { color: var(--amber); }
+  .task-status.completed { color: var(--green); }
+  .sdk-task-item.completed .task-subject { color: var(--muted); text-decoration: line-through; }
+
+  /* Info overlay */
+  #info-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.25); backdrop-filter: blur(2px); }
+  #info-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 18px 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.10); width: 460px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+  #info-close { float: right; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+  #info-panel h2 { font-size: 13px; font-weight: 600; color: var(--text-strong); margin-bottom: 12px; letter-spacing: -0.2px; }
+  .info-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .info-table th, .info-table td { text-align: left; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .info-table th { color: var(--muted); width: 68px; font-weight: 400; }
+  .info-table td { color: var(--text); word-break: break-all; font-family: var(--mono); font-size: 11px; }
+
+  @media (max-width: 768px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    #sidebar { grid-column: 1; grid-row: 1; flex-direction: row; gap: 6px; padding: 6px 8px; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #main { grid-column: 1; grid-row: 2; }
+    #rightbar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app" x-data="app()">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-hdr">📊 第<span x-text="stats.day || '--'"></span>天</div>
+    <template x-for="cat in stats.categories" :key="cat.name">
+      <div class="sb-cat" :class="{ warn: cat.warn }">
+        <div>
+          <span class="sb-cat-name" x-text="cat.name"></span>
+          <span class="sb-cat-count" x-text="cat.count"></span>
+        </div>
+        <div class="sb-bar"><div class="sb-bar-inner" :style="'width:' + cat.bar + '%'"></div></div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <!-- Header -->
+    <div id="header">
+      <div class="header-row">
+        <span id="status-dot" :class="status"></span>
+        <span class="header-title">RimWorld Bridge Agent</span>
+        <span class="header-spacer"></span>
+        <span class="header-colony" x-text="info.colony || '--'"></span>
+        <button id="info-btn" @click="info.show = true" title="SDK 信息">i</button>
+      </div>
+      <div class="header-meta">
+        <span class="hdr-budget" x-html="budgetHtml"></span>
+        <span class="meta-item">Tools <span class="meta-val" x-text="toolCount"></span></span>
+        <span class="scroll-toggle" id="scroll-toggle" @click="toggleAutoScroll()" x-bind:class="{ off: !autoScroll }">
+          <span class="st-dot"></span> 吸附
+        </span>
+        <div class="think-dd" id="think-dd">
+          <span class="dd-btn" @click.stop="think.open=!think.open">💭 引导:<span x-text="think.effort"></span> ▾</span>
+          <div class="dd-menu" :class="{ open: think.open }">
+            <div class="dd-item on selected">引导深度<span class="dd-check">✓</span></div>
+            <div class="dd-sub">
+              <span :class="{ on: think.effort === 'low' }" @click="think.effort='low'">低</span>
+              <span :class="{ on: think.effort === 'medium' }" @click="think.effort='medium'">中</span>
+              <span :class="{ on: think.effort === 'high' }" @click="think.effort='high'">高</span>
+              <span :class="{ on: think.effort === 'xhigh' }" @click="think.effort='xhigh'">极高</span>
+              <span :class="{ on: think.effort === 'max' }" @click="think.effort='max'">最大</span>
+            </div>
+            <div class="dd-item" @click="think.mode='disabled'">禁用思考<span class="dd-check">✓</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Overlay -->
+    <div id="info-overlay" x-show="info.show" @click.self="info.show=false" x-transition>
+      <div id="info-panel">
+        <button id="info-close" @click="info.show=false">&times;</button>
+        <h2>SDK 信息</h2>
+        <table class="info-table">
+          <tr><th>Model</th><td x-text="info.model || '-'"></td></tr>
+          <tr><th>Project</th><td></td></tr>
+          <tr><th>Session</th><td x-text="info.session || '-'"></td></tr>
+          <tr><th>Version</th><td x-text="info.version || '-'"></td></tr>
+          <tr><th>Permission</th><td x-text="info.permission || '-'"></td></tr>
+          <tr><th>MCP</th><td><div class="info-list"><template x-for="m in info.mcp" :key="m.name"><div><span x-text="m.name"></span> <span style="color:var(--green)" x-text="m.status"></span></div></template></div></td></tr>
+          <tr><th>Tools</th><td><div class="info-list"><template x-for="t in info.tools" :key="t"><div x-text="t"></div></template></div></td></tr>
+          <tr><th>Skills</th><td><div class="info-list"><template x-for="s in info.skills" :key="s"><div x-text="s"></div></template></div></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages" @scroll.debounce="onScroll">
+      <button id="new-msg-pill" x-show="showPill" @click="scrollToBottom">↓ 回到底部</button>
+
+      <template x-for="(item, idx) in displayedMessages" :key="item.key">
+        <!-- User -->
+        <div class="msg msg-user" x-show="item.type === 'user'">
+          <div class="msg-label">USER</div>
+          <div class="msg-body" x-text="item.text"></div>
+        </div>
+
+        <!-- Agent -->
+        <div class="msg msg-agent" x-show="item.type === 'agent'" :class="{ sub: item.agentType }">
+          <div class="msg-label">
+            <template x-if="item.agentType">
+              <span @click="item.subOpen = !item.subOpen" style="cursor:pointer">
+                <span x-text="item.subOpen ? '▾' : '▸'"></span>
+                <span x-text="item.agentType.toUpperCase()"></span>
+              </span>
+            </template>
+            <template x-if="!item.agentType">AGENT</template>
+          </div>
+          <div class="msg-body" x-show="item.agentType ? item.subOpen !== false : true" x-text="item.text"></div>
+        </div>
+
+        <!-- Thinking -->
+        <div class="msg-thinking" x-show="item.type === 'thinking'" :class="{ done: item.done, collapsed: item.collapsed }">
+          <div class="th-header" @click="item.collapsed = !item.collapsed">
+            <span class="th-icon">▼</span>
+            <span class="th-label" x-text="item.done ? '思考过程' : '思考中...'"></span>
+            <span class="th-cursor" x-show="!item.done"></span>
+          </div>
+          <div class="th-body" x-text="item.text"></div>
+        </div>
+
+        <!-- Tool -->
+        <div class="msg msg-tool" x-show="item.type === 'tool'">
+          <div class="msg-header" @click="item.open = !item.open">
+            <span x-text="item.open ? '▾' : '▸'" style="font-size:10px;color:var(--muted);width:10px;text-align:center"></span>
+            <span class="msg-label">TOOL</span>
+            <span class="tool-name" x-text="item.toolName"></span>
+            <span class="tool-status" :style="{ color: item.statusColor || 'var(--amber)' }" x-text="item.statusText || '执行中...'"></span>
+          </div>
+          <div class="msg-body" x-show="item.open" style="display:none">
+            <!-- Input -->
+            <div x-show="item.input && item.input !== '{}'" style="font-family:var(--mono);font-size:12px;color:var(--muted);padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:6px" x-text="item.input"></div>
+            <!-- Result -->
+            <div x-show="item.result" class="tool-result-text" :style="{ color: item.isError ? 'var(--red)' : 'var(--text)' }" x-text="item.result"></div>
+          </div>
+        </div>
+
+        <!-- Result divider -->
+        <div class="msg-result" x-show="item.type === 'result'">
+          <span class="result-line"></span>
+          <span class="result-label" :class="{ ok: item.ok, error: !item.ok }" x-text="item.label"></span>
+          <span class="result-line"></span>
+        </div>
+      </template>
+
+      <!-- Typing indicator -->
+      <div class="typing" x-show="typing">
+        <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+      </div>
+    </div>
+
+    <!-- Compose -->
+    <div class="compose">
+      <span class="header-agent" x-text="agentRole">休眠中</span>
+      <span class="prompt">&gt;</span>
+      <textarea id="chat-input" placeholder="输入消息..." rows="1"
+        x-ref="input"
+        @input="adjustHeight"
+        @keydown.enter.prevent="if(!$event.shiftKey) send()"></textarea>
+      <button id="send-btn" @click="send()" :disabled="!connected || !inputText">Send</button>
+      <button id="abort-btn" @click="abort()" :class="{ enabled: abortEnabled }" :disabled="!abortEnabled" title="中断当前 AI 回复">中断</button>
+    </div>
+  </div>
+
+  <!-- Rightbar -->
+  <div id="rightbar">
+    <div id="sdk-tasks-header">
+      <span>☰ AI 计划</span>
+      <span class="task-count" x-text="pendingTaskCount"></span>
+    </div>
+    <div id="sdk-task-list">
+      <template x-for="t in sortedTasks" :key="t.id">
+        <div class="sdk-task-item" :class="{ completed: t.status === 'completed' }">
+          <span class="task-status" :class="t.status" x-text="t.status === 'in_progress' ? '▶' : t.status === 'completed' ? '✓' : '○'"></span>
+          <span class="task-subject" x-text="t.subject"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Tool category mapping =====
+const TOOL_CAT = {
+  '地图查询': ['get_tile_grid','get_tile_detail','get_structure_layout','fertility_grid','terrain_grid','temperature_grid','pollution_grid','search_map','find_pawn','find_enemies','find_equipment','get_thing_def','search_thing_def'],
+  '殖民者': ['get_colonists','get_colonist_needs','get_colonist_health','get_work_priorities','set_work_priority'],
+  '设施建造': ['designate_build','designate_room','designate_mine','designate_deconstruct','designate_clear_plants','create_stockpile','create_growing_zone','delete_zone','expand_zone','cancel_build','cancel_task','uninstall_building','install_minified_thing'],
+  '装备战斗': ['equip_pawn','draft_pawn','attack_pawn','force_attack','haul_item','pick_up_item','drop_equipment','strip_pawn','arrest_pawn','rescue_pawn','capture_pawn','force_dress','drop_carried'],
+  '生产研究': ['create_production_bill','list_recipes','get_bills','manage_bill','list_research_projects','set_research_project','get_research_progress']
+};
+
+function classifyTool(name) {
+  for (var cat in TOOL_CAT) { if (TOOL_CAT[cat].indexOf(name) >= 0) return cat; }
+  return '其他';
+}
+
+const CAT_ORDER = ['地图查询','设施建造','殖民者','装备战斗','生产研究','其他'];
+
+function buildStats(statsArray) {
+  var catMap = {}, grandTotal = 0;
+  for (var i = 0; i < statsArray.length; i++) {
+    var s = statsArray[i];
+    var cat = classifyTool(s.tool_name);
+    if (!catMap[cat]) catMap[cat] = 0;
+    catMap[cat] += s.call_count;
+    grandTotal += s.call_count;
+  }
+  var maxCount = 1;
+  for (var k in catMap) { if (catMap[k] > maxCount) maxCount = catMap[k]; }
+  var cats = Object.keys(catMap).sort(function(a, b) {
+    var ai = CAT_ORDER.indexOf(a), bi = CAT_ORDER.indexOf(b);
+    if (ai < 0) ai = 999; if (bi < 0) bi = 999;
+    return ai !== bi ? ai - bi : catMap[b] - catMap[a];
+  });
+  return cats.map(function(c) {
+    var count = catMap[c];
+    var pct = grandTotal > 0 ? Math.round(count / grandTotal * 100) : 0;
+    return { name: c, count: count, bar: Math.max(2, Math.round(count / maxCount * 100)), warn: c === '地图查询' && pct > 50 };
+  });
+}
+
+function fmtNum(v) {
+  return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : String(v);
+}
+
+// ===== WS =====
+let ws = null;
+let reconnectTimer = null;
+let reconnectDelay = 5000;
+const RECONNECT_MAX = 30000;
+
+function app() {
+  return {
+    status: 'disconnected',
+    connected: false,
+    agentRole: '休眠中',
+    inputText: '',
+    abortEnabled: false,
+    typing: false,
+    toolCount: 0,
+    autoScroll: true,
+    showPill: false,
+    userScrolledUp: false,
+    messageCount: 0,
+    discarding: false,
+
+    // Thinking mode
+    think: {
+      open: false,
+      mode: 'adaptive',
+      effort: 'high',
+      openMenu() { this.open = !this.open; },
+      closeMenu() { this.open = false; }
+    },
+
+    // Budget
+    budgetHtml: 'Token --',
+
+    // Info overlay
+    info: {
+      show: false,
+      model: '', session: '', version: '', permission: '',
+      colony: '--', mcp: [], tools: [], skills: []
+    },
+
+    // Stats (sidebar)
+    stats: { day: '--', categories: [] },
+
+    // Messages (flat array, items pushed by WS)
+    messages: [],
+
+    // Tasks
+    tasks: [],
+
+    // ===== Computed =====
+    get pendingTaskCount() {
+      var n = 0;
+      for (var i = 0; i < this.tasks.length; i++) {
+        if (this.tasks[i].status !== 'completed') n++;
+      }
+      return n;
+    },
+
+    get sortedTasks() {
+      return this.tasks.slice().sort(function(a, b) {
+        return (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0);
+      });
+    },
+
+    get displayedMessages() {
+      return this.messages;
+    },
+
+    // ===== Actions =====
+    send() {
+      if (!this.connected || !this.inputText) return;
+      ws.send(JSON.stringify({ type: 'chat', text: this.inputText, thinking: { mode: this.think.mode, effort: this.think.effort } }));
+      this.inputText = '';
+      this.adjustHeight();
+      this.typing = true;
+    },
+
+    abort() {
+      if (!this.connected || this.discarding) return;
+      ws.send(JSON.stringify({ type: 'abort' }));
+      this.discarding = true;
+    },
+
+    adjustHeight() {
+      var el = this.$refs.input;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(Math.max(el.scrollHeight, 44), 160) + 'px';
+    },
+
+    scrollToBottom() {
+      this.userScrolledUp = false;
+      this.showPill = false;
+      requestAnimationFrame(function() {
+        var m = document.getElementById('messages');
+        if (m) m.scrollTop = m.scrollHeight;
+      });
+    },
+
+    toggleAutoScroll() {
+      this.autoScroll = !this.autoScroll;
+      if (this.autoScroll) { this.userScrolledUp = false; this.showPill = false; }
+    },
+
+    onScroll() {
+      var m = document.getElementById('messages');
+      if (!m) return;
+      var diff = m.scrollHeight - m.clientHeight - m.scrollTop;
+      if (m.scrollTop < 200 && hasMoreOlder && oldestId && !loadingOlder) loadOlder();
+      if (diff < 50) { this.userScrolledUp = false; this.showPill = false; }
+      else if (diff > 100) { this.userScrolledUp = true; this.showPill = true; }
+    },
+
+    // ===== Message helpers (called from WS handler) =====
+    pushMsg(item) {
+      this.messages.push(item);
+      this.messageCount++;
+      if (this.autoScroll && !this.userScrolledUp)
+        requestAnimationFrame(function() {
+          var m = document.getElementById('messages');
+          if (m) m.scrollTop = m.scrollHeight;
+        });
+    },
+
+    updateToolPanel(toolId, updates) {
+      for (var i = this.messages.length - 1; i >= 0; i--) {
+        var m = this.messages[i];
+        if (m.type === 'tool' && m.toolId === toolId) {
+          Object.assign(m, updates);
+          return;
+        }
+      }
+    },
+
+    findToolPanel(toolId) {
+      for (var i = this.messages.length - 1; i >= 0; i--) {
+        var m = this.messages[i];
+        if (m.type === 'tool' && m.toolId === toolId) return m;
+      }
+      return null;
+    },
+
+    finalizeCurrentThinking() {
+      for (var i = this.messages.length - 1; i >= 0; i--) {
+        var m = this.messages[i];
+        if (m.type === 'thinking' && !m.done) { m.done = true; return; }
+      }
+    },
+
+    appendTextToLastAgent(delta) {
+      // If last message is agent and text is empty, start new; otherwise append
+      var last = this.messages.length > 0 ? this.messages[this.messages.length - 1] : null;
+      if (last && last.type === 'agent' && last.streaming) {
+        last.text += delta;
+      } else {
+        this.pushMsg({ key: 'agent-' + (this.messageCount++), type: 'agent', text: delta, agentType: '', streaming: true });
+      }
+    },
+
+    finalizeAgentText() {
+      var last = this.messages.length > 0 ? this.messages[this.messages.length - 1] : null;
+      if (last && last.type === 'agent') last.streaming = false;
+    },
+
+    clearMessages() {
+      this.messages = [];
+      this.messageCount = 0;
+      this.toolCount = 0;
+    }
+  };
+}
+
+// ===== WS connect =====
+let pollInterval = null;
+
+function pollToolStats() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'tool_stats', from_day: 0, to_day: 2147483647 }));
+}
+
+function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  var el = document.getElementById('status-dot');
+  if (el) el.className = 'connecting';
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = '{{BRIDGE_HOST}}';
+  const wsPort = {{BRIDGE_PORT}};
+  ws = new WebSocket(protocol + '//' + host + ':' + wsPort);
+
+  ws.onopen = function() {
+    reconnectDelay = 5000;
+    var root = document.querySelector('#app')._x_dataStack[0];
+    root.connected = true;
+    root.status = 'connected';
+    loadHistory();
+    pollToolStats();
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(pollToolStats, 5000);
+  };
+
+  ws.onclose = function() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    var root = document.querySelector('#app')._x_dataStack[0];
+    root.connected = false;
+    root.status = 'disconnected';
+    root.typing = false;
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(function() {
+      reconnectTimer = null;
+      reconnectDelay = Math.min(reconnectDelay * 1.5, RECONNECT_MAX);
+      connect();
+    }, reconnectDelay);
+  };
+
+  ws.onerror = function() { if (ws) ws.close(); };
+
+  ws.onmessage = function(event) {
+    var msg;
+    try { msg = JSON.parse(event.data); } catch(e) { return; }
+    var r = document.querySelector('#app')._x_dataStack[0];
+    handleWS(msg, r);
+  };
+}
+
+// ===== History =====
+var loadingHistory = false;
+var loadingOlder = false;
+var hasMoreOlder = false;
+var oldestId = 0;
+var seenUuids = {};
+var pendingWs = [];
+
+function loadOlder() {
+  if (loadingOlder || !hasMoreOlder || !oldestId || !ws) return;
+  loadingOlder = true;
+  ws.send(JSON.stringify({ type: 'history_before', before_id: oldestId, n: 30 }));
+}
+
+function loadHistory() {
+  if (loadingHistory) return;
+  loadingHistory = true;
+  pendingWs = [];
+  ws.send(JSON.stringify({ type: 'history', n: 30 }));
+  setTimeout(function() {
+    if (loadingHistory) {
+      loadingHistory = false;
+      if (pendingWs.length) {
+        var queued = pendingWs.splice(0);
+        var r = document.querySelector('#app')._x_dataStack[0];
+        for (var k = 0; k < queued.length; k++) handleWS(queued[k], r);
+      }
+    }
+  }, 5000);
+}
+
+// Build history items for display (tool_call/tool_result pairs)
+function addHistoryItem(r, item) {
+  if (item.type === 'user') {
+    r.pushMsg({ key: 'u-' + item.id, type: 'user', text: item.text || (item.message ? (item.message.content || []).filter(function(c){return c.type==='text'}).map(function(c){return c.text}).join('\n') : '') });
+  } else if (item.type === 'assistant') {
+    var content = (item.message || {}).content || [];
+    for (var c = 0; c < content.length; c++) {
+      var b = content[c];
+      if (b.type === 'thinking' && b.thinking) {
+        r.pushMsg({ key: 'th-' + item.id + '-' + c, type: 'thinking', text: b.thinking, done: true, collapsed: false });
+      } else if (b.type === 'text' && b.text) {
+        r.pushMsg({ key: 'a-' + item.id + '-' + c, type: 'agent', text: b.text, agentType: item.agent_type || '' });
+      }
+    }
+    r.toolCount = r.messages.filter(function(m){return m.type==='tool'}).length;
+  } else if (item.type === 'tool_call') {
+    r.toolCount++;
+    r.pushMsg({ key: 't-' + item.id, type: 'tool', toolId: item.id, toolName: item.name, input: item.input, open: false, statusText: '完成', statusColor: 'var(--green)' });
+  } else if (item.type === 'tool_result') {
+    var tp = r.findToolPanel(item.tool_use_id || item.id);
+    if (tp) {
+      tp.result = item.content || '';
+      tp.isError = item.is_error;
+      if (item.is_error) { tp.statusText = '✗ 失败'; tp.statusColor = 'var(--red)'; }
+    }
+  }
+}
+
+// ===== WS message handler =====
+function handleWS(msg, r) {
+  if (msg.type === 'history_response') {
+    r.clearMessages();
+    seenUuids = {}; oldestId = 0; hasMoreOlder = false;
+    var msgs = msg.messages || [];
+    for (var i = 0; i < msgs.length; i++) { addHistoryItem(r, msgs[i]); if (!oldestId || msgs[i].id < oldestId) oldestId = msgs[i].id; }
+    hasMoreOlder = msgs.length >= 30;
+    loadingHistory = false;
+    r.scrollToBottom();
+    for (var j = 0; j < pendingWs.length; j++) handleWS(pendingWs[j], r);
+    pendingWs = [];
+    return;
+  }
+
+  if (msg.type === 'history_before_response') {
+    var bmsgs = msg.messages || [];
+    var prevCount = r.messages.length;
+    var tmp = [];
+    for (var bi = 0; bi < bmsgs.length; bi++) {
+      // build temp items
+      if (bmsgs[bi].type === 'tool_call') { r.toolCount++; r.messages.unshift({ key: 't-' + bmsgs[bi].id, type: 'tool', toolId: bmsgs[bi].id, toolName: bmsgs[bi].name, input: bmsgs[bi].input, open: false, statusText: '完成', statusColor: 'var(--green)' }); }
+      // Simpler: just prepend
+      if (!oldestId || bmsgs[bi].id < oldestId) oldestId = bmsgs[bi].id;
+    }
+    // For simplicity, reload history from scratch for older
+    loadingOlder = false;
+    return;
+  }
+
+  if (loadingHistory) { pendingWs.push(msg); return; }
+  if (r.discarding && msg.type !== 'result' && msg.type !== 'aborted') return;
+
+  switch (msg.type) {
+    case 'agent-status': r.agentRole = msg.role || '休眠中'; break;
+    case 'budget_status': r.budgetHtml = buildBudgetHtml(msg); break;
+    case 'sdk-tasks': r.tasks = msg.tasks || []; break;
+    case 'system_init':
+      r.info.model = msg.model || '';
+      r.info.session = msg.session_id || '';
+      r.info.version = msg.claude_code_version || '';
+      r.info.permission = msg.permission_mode || '';
+      r.info.mcp = (msg.mcp_servers || []).map(function(s) { return { name: s.name, status: s.status }; });
+      r.info.tools = msg.tools || [];
+      r.info.skills = msg.skills || [];
+      break;
+    case 'error': r.pushMsg({ key: 'err-' + Date.now(), type: 'user', text: '⚠ ' + (msg.error || '') }); break;
+    case 'user':
+      r.typing = false;
+      r.pushMsg({ key: 'u-' + Date.now(), type: 'user', text: msg.text || '' });
+      break;
+    case 'text_delta':
+      r.abortEnabled = true;
+      r.typing = false;
+      r.finalizeCurrentThinking();
+      if (!msg.text) { r.finalizeAgentText(); }
+      else { r.appendTextToLastAgent(msg.text); }
+      break;
+    case 'thinking_delta':
+      if (!msg.thinking) {
+        r.finalizeCurrentThinking();
+        r.pushMsg({ key: 'th-' + Date.now(), type: 'thinking', text: '', done: false, collapsed: false });
+      } else {
+        var tmsgs = r.messages;
+        for (var ti = tmsgs.length - 1; ti >= 0; ti--) {
+          if (tmsgs[ti].type === 'thinking' && !tmsgs[ti].done) { tmsgs[ti].text += msg.thinking; break; }
+        }
+      }
+      break;
+    case 'tool_call':
+      r.finalizeCurrentThinking();
+      r.toolCount++;
+      r.pushMsg({ key: 't-' + msg.id, type: 'tool', toolId: msg.id, toolName: msg.name, input: msg.input, open: false, statusText: '执行中...', statusColor: 'var(--amber)' });
+      break;
+    case 'tool_result':
+      r.updateToolPanel(msg.id, {
+        statusText: msg.isError ? '✗ 失败' : '✓ 完成',
+        statusColor: msg.isError ? 'var(--red)' : 'var(--green)',
+        result: msg.content || '',
+        isError: msg.isError,
+        open: true
+      });
+      break;
+    case 'result':
+      r.discarding = false;
+      r.abortEnabled = false;
+      r.typing = false;
+      var ok = msg.subtype === 'success';
+      r.pushMsg({ key: 'rs-' + Date.now(), type: 'result', ok: ok, label: ok ? '✓ Done' : msg.subtype === 'aborted' ? '⏹ Aborted' : '✗ Failed' });
+      break;
+    case 'aborted':
+      r.discarding = false;
+      r.abortEnabled = false;
+      r.typing = false;
+      break;
+    case 'tool_stats_response':
+      r.stats.day = msg.game_day || '--';
+      r.stats.categories = buildStats(msg.stats || []);
+      break;
+  }
+}
+
+function buildBudgetHtml(data) {
+  var parts = [];
+  var fmt = fmtNum;
+  var limit = data.limit || 0, used = data.used || 0;
+  var cacheRead = data.cacheRead || 0, totalInput = data.totalInput || 0, cacheCreate = data.cacheCreate || 0;
+  var contextWindow = data.contextWindow || 0, inputTokens = data.inputTokens || 0;
+
+  if (inputTokens > 0) {
+    if (contextWindow > 0) {
+      var ctxPct = Math.round(inputTokens / contextWindow * 100);
+      parts.push('<span class="ctx-window">入 ' + fmt(inputTokens) + '/' + fmt(contextWindow) + ' ' + ctxPct + '%</span>');
+    } else {
+      parts.push('<span class="ctx-window">入 ' + fmt(inputTokens) + '</span>');
+    }
+  }
+
+  var tokPart = 'Tok ' + fmt(used) + '/' + (limit > 0 ? fmt(limit) : '--');
+  if (limit > 0 && used > 0) {
+    var pct = Math.round(used / limit * 100);
+    var barCls = pct >= 95 ? ' danger' : pct >= 80 ? ' warning' : '';
+    tokPart += ' ' + pct + '% <span class="budget-bar' + barCls + '"></span>';
+  }
+  parts.push(tokPart);
+
+  if (totalInput + cacheRead + cacheCreate > 0) {
+    var cachePct = Math.round(cacheRead / (totalInput + cacheRead + cacheCreate) * 100);
+    parts.push('<span class="cache-rate">缓存 ' + fmt(cacheRead) + ' ' + cachePct + '%</span>');
+  }
+  return parts.join(' <span class="hdr-sep">│</span> ');
+}
+
+// ===== Init =====
+document.addEventListener('alpine:init', function() {
+  connect();
+});
+</script>
+</body>
+</html>
