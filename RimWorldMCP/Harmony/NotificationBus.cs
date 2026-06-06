@@ -57,6 +57,9 @@ namespace RimWorldMCP.Harmony
         /// <summary>事件通知标记 — BridgeLifecycle.CCEventTick() 每帧检查 (L3 Critical)</summary>
         public static volatile bool HighDangerPending;
 
+        /// <summary>最近一次威胁原因（供减速检测读取，由 Hook_Notification 信函/消息补丁写入）</summary>
+        public static volatile string LastThreatReason = "";
+
         // ========== 供 Patch 调用 ==========
 
         public static void Enqueue(Notification n)
