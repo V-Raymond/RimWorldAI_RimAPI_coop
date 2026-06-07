@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json.Serialization;
+using LiteDB;
 
 namespace RimWorldAgent.Core.Data
 {
@@ -19,7 +20,8 @@ namespace RimWorldAgent.Core.Data
     /// </summary>
     public class ConversationEntry
     {
-        /// <summary>SQLite 自增主键（0 = 未持久化）</summary>
+        /// <summary>SQLite 自增主键 / LiteDB autoId（0 = 未持久化）</summary>
+        [BsonId(autoId: true)]
         [JsonPropertyName("id")]
         public long Id { get; set; }
 
@@ -65,6 +67,10 @@ namespace RimWorldAgent.Core.Data
         /// <summary>游戏内天数（GameTick / 60000）</summary>
         [JsonPropertyName("game_day")]
         public int GameDay { get; set; }
+
+        /// <summary>存档隔离 ID</summary>
+        [JsonPropertyName("save_id")]
+        public string SaveId { get; set; } = "";
     }
 
     /// <summary>每日工具调用统计 — 按游戏内天数 + 工具名聚合</summary>

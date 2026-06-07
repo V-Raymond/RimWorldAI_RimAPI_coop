@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="LiteDB" Version="5.0.17" />
     <Reference Include="Assembly-CSharp">
       <HintPath>F:\SteamLibrary\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
@@ -39,7 +40,6 @@
     </Reference>
     <Reference Include="System.Net.Http" />
     <PackageReference Include="Fleck" Version="0.13.0.48" />
-    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
     <Reference Include="0Harmony">
       <HintPath>F:\SteamLibrary\steamapps\workshop\content\294100\2009463077\Current\Assemblies\0Harmony.dll</HintPath>
       <Private>False</Private>
@@ -58,15 +58,6 @@
     <Target Name="CleanPublish" BeforeTargets="CoreCompile">
         <RemoveDir Directories="..\publish\RimWorldAgent" ContinueOnError="true" />
     </Target>
-
-  <!-- SQLite.Interop.dll：NuGet 自动拷贝被自定义 OutputPath 打断，显式拷贝 x64 原生 DLL -->
-  <PropertyGroup>
-    <SqliteInteropNuGet>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.nuget', 'packages', 'stub.system.data.sqlite.core.netframework', '1.0.118', 'build', 'net46'))</SqliteInteropNuGet>
-  </PropertyGroup>
-  <Target Name="CopySqliteInterop" AfterTargets="Build">
-    <Copy SourceFiles="$(SqliteInteropNuGet)\x64\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x64" />
-    <Copy SourceFiles="$(SqliteInteropNuGet)\x64\SQLite.Interop.dll" DestinationFolder="..\publish\RimWorldAgent\1.6\Assemblies\x64" />
-  </Target>
   <!-- 构建完成后：复制 DLL + 依赖 + 资源到 publish -->
   <Target Name="PublishAgent" AfterTargets="Build">
     <MakeDir Directories="..\publish\RimWorldAgent\1.6\Assemblies" />

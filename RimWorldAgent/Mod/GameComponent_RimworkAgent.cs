@@ -109,9 +109,9 @@ namespace RimWorldAgent
                     throw new InvalidOperationException("get_session_id 返回空，当前可能未加载存档");
 
                 var dbPath = Path.Combine(projectPath, "conversation.db");
-                _convStore = new SqliteConversationStore(dbPath, sessionId!);
+                _convStore = new LiteDbConversationStore(dbPath, sessionId!);
                 AgentLoop.ConversationStore = _convStore;
-                CoreLog.Info($"[agent-mod] SqliteConversationStore 已就绪 (save_id={sessionId})");
+                CoreLog.Info($"[agent-mod] LiteDbConversationStore 已就绪 (save_id={sessionId})");
 
                 _dbStore = dbStore;
 
@@ -195,5 +195,6 @@ namespace RimWorldAgent
                 SafeLog.Warning($"[agent-mod] ShutdownEngine 异常 (非致命): {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
         }
+
     }
 }
