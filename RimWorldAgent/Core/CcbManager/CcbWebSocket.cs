@@ -72,7 +72,9 @@ public class CcbWebSocket : IDisposable
 
     public async Task<bool> ConnectAsync(int timeoutMs = 10000)
     {
+        var wasShuttingDown = _shuttingDown;
         Disconnect();
+        if (wasShuttingDown) return false; // 外部已 shutdown，不覆盖标志位
         _shuttingDown = false;
 
         try
@@ -108,7 +110,7 @@ public class CcbWebSocket : IDisposable
         catch (Exception ex)
         {
             _state = CcbClientState.Disconnected;
-            CoreLog.Error($"[CcbWS] 连接失败: {ex.Message}");
+            CoreLog.Info($"[CcbWS] 连接未就绪(将自动重连): {ex.Message}");
             _ = ScheduleReconnect();
             return false;
         }
