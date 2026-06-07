@@ -10,17 +10,21 @@ namespace RimWorldAgent.Core
     {
         private static bool _initialized;
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool SetDllDirectory(string lpPathName);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool SetDllDirectoryW(string lpPathName);
 
-        /// <summary>在首次 SQLite 调用前调用，将 Native\{rid}\ 加入 P/Invoke 搜索路径</summary>
-        public static void Setup(string modulesDir)
+        /// <summary>在首次 SQLite 调用前调用，将 Native\{rid}\ 追加到 DLL 搜索路径</summary>
+        /// <remarks>
+        /// Windows: SetDllDirectory 在进程启动目录后追加一条搜索路径，不影响系统目录 / PATH 等。
+        /// Unix: 追加 LD_LIBRARY_PATH / DYLD_LIBRARY_PATH（动态链接器运行时读取）。
+        /// </remarks>
+        public static void Setup(string asmDir)
         {
             if (_initialized) return;
             _initialized = true;
 
-            var rid = GetRuntimeId();
-            var nativeDir = Path.GetFullPath(Path.Combine(modulesDir, "Native", rid));
+            var plat = Environment.OSVersion.Platform;
+            var nativeDir = GetNativeDir(asmDir, plat);
 
             if (!Directory.Exists(nativeDir))
             {
@@ -30,17 +34,15 @@ namespace RimWorldAgent.Core
 
             try
             {
-                var plat = Environment.OSVersion.Platform;
                 if (plat == PlatformID.Win32NT)
                 {
-                    if (SetDllDirectory(nativeDir))
+                    if (SetDllDirectoryW(nativeDir))
                         CoreLog.Info($"[NativeResolver] SetDllDirectory → {nativeDir}");
                     else
                         CoreLog.Warn($"[NativeResolver] SetDllDirectory 失败 (err={Marshal.GetLastWin32Error()})");
                 }
                 else
                 {
-                    // Unix: LD_LIBRARY_PATH (Linux) / DYLD_LIBRARY_PATH (macOS)
                     var key = plat == PlatformID.MacOSX ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH";
                     var existing = Environment.GetEnvironmentVariable(key) ?? "";
                     Environment.SetEnvironmentVariable(key,
@@ -54,14 +56,12 @@ namespace RimWorldAgent.Core
             }
         }
 
-        private static string GetRuntimeId()
+        private static string GetNativeDir(string asmDir, PlatformID plat)
         {
-            var plat = Environment.OSVersion.Platform;
-            if (plat == PlatformID.Win32NT)
-                return IntPtr.Size == 8 ? "win-x64" : "win-x86";
-            if (plat == PlatformID.MacOSX)
-                return "osx-x64";
-            return "linux-x64";
+            var rid = plat == PlatformID.Win32NT
+                ? (IntPtr.Size == 8 ? "win-x64" : "win-x86")
+                : plat == PlatformID.MacOSX ? "osx-x64" : "linux-x64";
+            return Path.GetFullPath(Path.Combine(asmDir, "Native", rid));
         }
     }
 }
