@@ -108,10 +108,14 @@ namespace RimWorldAgent
                 if (string.IsNullOrEmpty(sessionId))
                     throw new InvalidOperationException("get_session_id 返回空，当前可能未加载存档");
 
+                // 先设置原生 DLL 搜索路径，再初始化 SQLite
+                // MOD 部署: Native\ 在 Assemblies\ 的上一级
+                NativeResolver.Setup(Path.GetFullPath(Path.Combine(modRoot, "..")));
+
                 var dbPath = Path.Combine(projectPath, "conversation.db");
-                _convStore = new LiteDbConversationStore(dbPath, sessionId!);
+                _convStore = new SqliteConversationStore(dbPath, sessionId!);
                 AgentLoop.ConversationStore = _convStore;
-                CoreLog.Info($"[agent-mod] LiteDbConversationStore 已就绪 (save_id={sessionId})");
+                CoreLog.Info($"[agent-mod] SqliteConversationStore 已就绪 (save_id={sessionId})");
 
                 _dbStore = dbStore;
 

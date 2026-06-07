@@ -28,7 +28,8 @@ RimWorldAgent/
 │   ├── models/                  ★ 类型定义 — SdkMessage / UiMessage / ChatChannel
 │   │   ├── SdkMessage.cs          SDK 消息模型 + 内容块 + 辅助类型
 │   │   └── SdkSystemMessages.cs   System 消息子类（15 subtype × 1 兜底）
-│   ├── Data/                    ★ 数据抽象层 — IDbStore + IConversationStore (ConversationEntry / MemoryConvStore / LiteDbConvStore / UiHistoryFormatter)
+│   │   └── NativeResolver.cs    ★ 原生 DLL 搜索路径设置
+│   ├── Data/                    ★ 数据抽象层 — IDbStore + IConversationStore (ConversationEntry / MemoryConvStore / SqliteConvStore / UiHistoryFormatter)
 │   ├── Mcp/                     MCP 客户端 + Agent MCP Server (:9878)
 │   ├── CcbManager/              CCB 子进程管理 + CcbWebSocket + TokenUsageTracker
 │   └── UIMessageBus.cs          ★ UI 总线 — Fleck WS :19999
@@ -65,8 +66,8 @@ RimWorldAgent (EXE/MOD)             RimWorldMCP (Mod DLL)
 
 | 模式 | 进程 | IDbStore | IConversationStore | IGameStateProvider |
 |------|------|----------|-------------------|-------------------|
-| **EXE** | `RimWorldAgent.exe` | `JsonDbStore`（JSON 文件） | `LiteDbConversationStore`（LiteDB，纯托管） | `RemoteGameStateProvider`（MCP 推送 + 查询） |
-| **MOD** | RimWorld 加载 DLL | `ScribeDbStore`（Scribe_Values） | `LiteDbConversationStore`（LiteDB，纯托管） | `DirectGameStateProvider`（TickManager 直读） |
+| **EXE** | `RimWorldAgent.exe` | `JsonDbStore`（JSON 文件） | `SqliteConversationStore`（Microsoft.Data.Sqlite） | `RemoteGameStateProvider`（MCP 推送 + 查询） |
+| **MOD** | RimWorld 加载 DLL | `ScribeDbStore`（Scribe_Values） | `SqliteConversationStore`（Microsoft.Data.Sqlite，原生 DLL 在 Native\） | `DirectGameStateProvider`（TickManager 直读） |
 
 ### DB 存储抽象 — IDbStore
 
@@ -337,7 +338,7 @@ SDK 工具调用不经过 companion。
 | **UIMessageBus** | `Core/UIMessageBus.cs` | 纯 UiMessage WS 广播 + 客户端消息接收（不引用 SDK 类型）。单条 PushUiMessage / 批量 PushUiMessages，OnChat/OnAbort/OnHistory/OnHistoryBefore/OnClientConnected 事件 |
 | **IConversationStore** | `Core/Data/IConversationStore.cs` | 多轮对话持久化抽象 — RecordUserMessage / RecordAssistantMessage / RecordSystemMessage / RecordToolCall / RecordToolResult / GetRecent / GetBefore / GetAt |
 | **ConversationEntry** | `Core/Data/ConversationEntry.cs` | 会话条目数据模型 — User/Assistant/System/ToolCall/ToolResult 五种角色 + tool 扩展字段 |
-| **LiteDbConversationStore** | `Core/Data/LiteDbConversationStore.cs` | LiteDB NoSQL 持久化（纯托管），自动索引，按 save_id 隔离 |
+| **SqliteConversationStore** | `Core/Data/SqliteConversationStore.cs` | SQLite WAL 持久化（Microsoft.Data.Sqlite），原生 DLL 在 Native\，按 save_id 隔离 |
 | **MemoryConversationStore** | `Core/Data/MemoryConversationStore.cs` | 纯内存存储（MOD），List+lock |
 | **UiHistoryFormatter** | `Core/Data/UiHistoryFormatter.cs` | ConversationEntry → 前端 history_response / history_before_response JSON |
 
