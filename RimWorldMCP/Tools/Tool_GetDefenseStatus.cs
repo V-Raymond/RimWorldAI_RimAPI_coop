@@ -157,8 +157,9 @@ namespace RimWorldMCP.Tools
                         float heat = pawn.GetStatValue(StatDefOf.ArmorRating_Heat, true, -1);
                         sb.AppendLine($"| {name} | {sharp:P0} | {blunt:P0} | {heat:P0} |");
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        McpLog.Warn($"[DefenseStatus] 读取护甲失败: {FormatExceptionChain(ex)}");
                         sb.AppendLine($"| {name} | - | - | - |");
                     }
                 }
@@ -257,6 +258,15 @@ namespace RimWorldMCP.Tools
                 return ToolResult.Success(sb.ToString());
             });
         }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
+        }
+
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;
     }
 }

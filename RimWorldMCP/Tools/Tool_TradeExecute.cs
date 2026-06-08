@@ -60,9 +60,9 @@ namespace RimWorldMCP.Tools
         private static readonly MethodInfo _addToTradeables = typeof(TradeDeal)
             .GetMethod("AddToTradeables", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-        // 虚拟商船缓存：key = "factionName|traderKindDefName"，TTL 15 秒实时（约 1 游戏小时/超快）
+        // 虚拟商船缓存：key = "factionName|traderKindDefName"，TTL 1 游戏小时
         private static readonly Dictionary<string, (TradeShip ship, int cachedTick)> _vcache = new();
-        private const int CacheTTLTicks = 37500; // 约 15 秒实时 = 1 游戏小时
+        private const int CacheTTLTicks = 2500;
 
         /// <summary>获取或创建缓存的虚拟商船，TTL 内复用避免重复生成</summary>
         private static TradeShip GetOrCreateVirtualShip(Map map, string key, TraderKindDef kind, Faction faction)
@@ -255,7 +255,7 @@ namespace RimWorldMCP.Tools
 
                     return ToolResult.Success(log.ToString().TrimEnd());
                 }
-                catch (Exception ex) { return ToolResult.Error($"交易失败: {ex.Message}"); }
+                catch (Exception ex) { return ToolResult.Error($"交易失败: {FormatExceptionChain(ex)}"); }
                 finally
                 {
                     TradeSession.trader = null!;

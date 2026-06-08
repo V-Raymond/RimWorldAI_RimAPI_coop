@@ -146,7 +146,7 @@ set_temp_control(thing_id=xxx, target_temp=21, power_on=true)
 - 不确定有什么操作可用时 → 先用右键菜单探查
 
 ## 移动控制
-- `move_pawn(colonist_name, pos_x, pos_y)` — 移动到指定坐标
+- `move_pawn(moves=[{colonist_id, pos_x, pos_y}])` — 移动到指定坐标
 - `move_camera(pos_x, pos_y)` — 移动视角
 - 战斗时先征召 (`draft_pawn`)，再移动部署
 

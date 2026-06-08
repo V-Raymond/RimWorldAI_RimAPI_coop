@@ -67,9 +67,9 @@ description: 装备优化指南。在为殖民者更换装备、评估武器/衣
 1. get_colonists              → 查看全体状态
 2. get_recommended_apparel    → 逐个检查保暖需求变化
 3. equip_pawn                 → 更换适应新季节的衣物
+```
 
 ## 相关 Skill
 - 制造新装备 → [[equipment-crafting]]
 - 战斗准备 → [[combat-preparation]]
 - 殖民地管理 → [[colony-management]]
-```

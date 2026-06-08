@@ -146,19 +146,59 @@ namespace RimWorldMCP.Tools
                 }
                 catch (Exception ex)
                 {
-                    return ToolResult.Error($"征召操作失败: {ex.Message}");
+                    return ToolResult.Error($"征召操作失败: {FormatExceptionChain(ex)}");
                 }
             });
         }
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args)
         {
             if (args == null) return null;
-            if (!args.Value.TryGetProperty("thing_id", out var jT) || !jT.TryGetInt32(out var id)) return null;
             var map = Find.CurrentMap;
             if (map == null) return null;
-            var pawn = CameraHelper.FindPawnById(map, id);
-            if (pawn == null) return null;
-            return (pawn.Position.x, pawn.Position.z, pawn.Position.x, pawn.Position.z);
+
+            int? minX = null, minZ = null, maxX = null, maxZ = null;
+            if (args.Value.TryGetProperty("colonist_ids", out var jIds) && jIds.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var ji in jIds.EnumerateArray())
+                {
+                    if (ji.TryGetInt32(out var id))
+                        IncludePawn(CameraHelper.FindPawnById(map, id), ref minX, ref minZ, ref maxX, ref maxZ);
+                }
+                return minX.HasValue && minZ.HasValue && maxX.HasValue && maxZ.HasValue
+                    ? (minX.Value, minZ.Value, maxX.Value, maxZ.Value)
+                    : ((int, int, int, int)?)null;
+            }
+
+            if (args.Value.TryGetProperty("thing_id", out var jT) && jT.TryGetInt32(out var thingId))
+            {
+                var pawn = CameraHelper.FindPawnById(map, thingId);
+                if (pawn == null) return null;
+                return (pawn.Position.x, pawn.Position.z, pawn.Position.x, pawn.Position.z);
+            }
+
+            foreach (var pawn in PawnsFinder.AllMaps_FreeColonistsSpawned)
+                IncludePawn(pawn, ref minX, ref minZ, ref maxX, ref maxZ);
+
+            return minX.HasValue && minZ.HasValue && maxX.HasValue && maxZ.HasValue
+                ? (minX.Value, minZ.Value, maxX.Value, maxZ.Value)
+                : ((int, int, int, int)?)null;
+        }
+
+        private static void IncludePawn(Pawn? pawn, ref int? minX, ref int? minZ, ref int? maxX, ref int? maxZ)
+        {
+            if (pawn == null) return;
+            minX = minX.HasValue ? Math.Min(minX.Value, pawn.Position.x) : pawn.Position.x;
+            minZ = minZ.HasValue ? Math.Min(minZ.Value, pawn.Position.z) : pawn.Position.z;
+            maxX = maxX.HasValue ? Math.Max(maxX.Value, pawn.Position.x) : pawn.Position.x;
+            maxZ = maxZ.HasValue ? Math.Max(maxZ.Value, pawn.Position.z) : pawn.Position.z;
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

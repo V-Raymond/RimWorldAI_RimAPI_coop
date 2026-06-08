@@ -109,13 +109,14 @@ namespace RimWorldMCP.Tools
                             else if (curLevel < 0.40f)
                                 issues.Add($"{label}偏低({pct}%)");
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
+                            McpLog.Warn($"[ColonistNeeds] 读取需求项失败: {FormatExceptionChain(ex)}");
                             try
                             {
                                 sb.AppendLine($"- {need.def?.LabelCap ?? "未知需求"}: 数据不可用");
                             }
-                            catch (Exception ex) { McpLog.Warn($"[ColonistNeeds] 读取需求数据失败: {ex.Message}"); }
+                            catch (Exception fallbackEx) { McpLog.Warn($"[ColonistNeeds] 读取需求数据失败: {FormatExceptionChain(fallbackEx)}"); }
                         }
                     }
 
@@ -137,6 +138,15 @@ namespace RimWorldMCP.Tools
             string bar = new string('#', filled) + new string('_', 10 - filled);
             return $"[{bar}]";
         }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
+        }
+
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;
     }
 }

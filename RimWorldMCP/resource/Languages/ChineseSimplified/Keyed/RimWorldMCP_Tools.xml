@@ -7,10 +7,17 @@
   <RimWorldMCP_Tool_toggle_pause>切换暂停</RimWorldMCP_Tool_toggle_pause>
   <RimWorldMCP_Tool_advance_tick>推进时间</RimWorldMCP_Tool_advance_tick>
   <RimWorldMCP_Tool_check_map_loaded>地图加载状态</RimWorldMCP_Tool_check_map_loaded>
+  <RimWorldMCP_Tool_get_game_speed>游戏速度</RimWorldMCP_Tool_get_game_speed>
+  <RimWorldMCP_Tool_get_mcp_latency>MCP延迟</RimWorldMCP_Tool_get_mcp_latency>
+  <RimWorldMCP_Tool_get_session_id>会话ID</RimWorldMCP_Tool_get_session_id>
+  <RimWorldMCP_Tool_get_world_summary>殖民地概况</RimWorldMCP_Tool_get_world_summary>
 
   <!-- 网格查询 -->
   <RimWorldMCP_Tool_get_tile_detail>坐标详情</RimWorldMCP_Tool_get_tile_detail>
   <RimWorldMCP_Tool_observe_area>观察标记</RimWorldMCP_Tool_observe_area>
+  <RimWorldMCP_Tool_plan_add>添加规划</RimWorldMCP_Tool_plan_add>
+  <RimWorldMCP_Tool_plan_list>规划列表</RimWorldMCP_Tool_plan_list>
+  <RimWorldMCP_Tool_plan_remove>删除规划</RimWorldMCP_Tool_plan_remove>
   <RimWorldMCP_Tool_get_tile_grid>网格地图</RimWorldMCP_Tool_get_tile_grid>
   <RimWorldMCP_Tool_list_chunks>Chunk列表</RimWorldMCP_Tool_list_chunks>
   <RimWorldMCP_Tool_fertility_grid>肥沃度图</RimWorldMCP_Tool_fertility_grid>
@@ -70,7 +77,6 @@
   <!-- 战斗 -->
   <RimWorldMCP_Tool_draft_pawn>征召切换</RimWorldMCP_Tool_draft_pawn>
   <RimWorldMCP_Tool_get_defense_status>防御状态</RimWorldMCP_Tool_get_defense_status>
-  <RimWorldMCP_Tool_attack_pawn>攻击目标</RimWorldMCP_Tool_attack_pawn>
   <RimWorldMCP_Tool_force_attack>强制攻击</RimWorldMCP_Tool_force_attack>
   <RimWorldMCP_Tool_find_enemies>搜索敌人</RimWorldMCP_Tool_find_enemies>
 
@@ -93,6 +99,7 @@
   <!-- 搜索 -->
   <RimWorldMCP_Tool_search_map>搜索地图</RimWorldMCP_Tool_search_map>
   <RimWorldMCP_Tool_find_pawn>搜索角色</RimWorldMCP_Tool_find_pawn>
+  <RimWorldMCP_Tool_find_mineable>搜索矿物</RimWorldMCP_Tool_find_mineable>
   <RimWorldMCP_Tool_get_thing_def>物品定义</RimWorldMCP_Tool_get_thing_def>
   <RimWorldMCP_Tool_search_thing_def>Wiki搜索</RimWorldMCP_Tool_search_thing_def>
   <RimWorldMCP_Tool_get_structure_layout>建筑布局</RimWorldMCP_Tool_get_structure_layout>
@@ -113,10 +120,21 @@
   <!-- 弹框 -->
   <RimWorldMCP_Tool_get_open_dialogs>弹框列表</RimWorldMCP_Tool_get_open_dialogs>
   <RimWorldMCP_Tool_select_dialog_option>选择弹框</RimWorldMCP_Tool_select_dialog_option>
+  <RimWorldMCP_Tool_get_notifications>通知列表</RimWorldMCP_Tool_get_notifications>
+  <RimWorldMCP_Tool_dismiss_notification>关闭通知</RimWorldMCP_Tool_dismiss_notification>
 
-  <!-- Skill -->
+  <!-- Agent 内部工具 -->
+  <RimWorldMCP_Tool_enter_plan>进入计划</RimWorldMCP_Tool_enter_plan>
+  <RimWorldMCP_Tool_enter_act>进入执行</RimWorldMCP_Tool_enter_act>
   <RimWorldMCP_Tool_get_skills>领域技能</RimWorldMCP_Tool_get_skills>
   <RimWorldMCP_Tool_active_skill>加载知识库</RimWorldMCP_Tool_active_skill>
+  <RimWorldMCP_Tool_create_skill>创建技能</RimWorldMCP_Tool_create_skill>
+  <RimWorldMCP_Tool_read_memory>读取记忆</RimWorldMCP_Tool_read_memory>
+  <RimWorldMCP_Tool_update_memory>更新记忆</RimWorldMCP_Tool_update_memory>
+  <RimWorldMCP_Tool_task_create>创建任务</RimWorldMCP_Tool_task_create>
+  <RimWorldMCP_Tool_task_update>更新任务</RimWorldMCP_Tool_task_update>
+  <RimWorldMCP_Tool_task_list>任务列表</RimWorldMCP_Tool_task_list>
+  <RimWorldMCP_Tool_task_get>任务详情</RimWorldMCP_Tool_task_get>
   <!-- 研究 -->
   <RimWorldMCP_Tool_stop_research>停止研究</RimWorldMCP_Tool_stop_research>
   <RimWorldMCP_Tool_get_research_speed>研究速度详情</RimWorldMCP_Tool_get_research_speed>
@@ -147,12 +165,6 @@
   <RimWorldMCP_Tool_check_deterioration>检查物品腐化</RimWorldMCP_Tool_check_deterioration>
   <RimWorldMCP_Tool_get_deteriorating_items>腐坏物品清单</RimWorldMCP_Tool_get_deteriorating_items>
 
-  <!-- TODO 系统 -->
-  <RimWorldMCP_Tool_todo_add>添加任务</RimWorldMCP_Tool_todo_add>
-  <RimWorldMCP_Tool_todo_delete>删除任务</RimWorldMCP_Tool_todo_delete>
-  <RimWorldMCP_Tool_todo_query>查询任务</RimWorldMCP_Tool_todo_query>
-  <RimWorldMCP_Tool_todo_set_status>设置任务状态</RimWorldMCP_Tool_todo_set_status>
-
   <!-- 右键菜单 -->
   <RimWorldMCP_Tool_get_right_click_menu>右键菜单</RimWorldMCP_Tool_get_right_click_menu>
   <RimWorldMCP_Tool_select_right_click>选择右键</RimWorldMCP_Tool_select_right_click>
@@ -176,11 +188,5 @@
   <!-- 任务 -->
   <RimWorldMCP_Tool_list_quests>任务列表（分页）</RimWorldMCP_Tool_list_quests>
   <RimWorldMCP_Tool_accept_quest>接受任务</RimWorldMCP_Tool_accept_quest>
-
-  <!-- 记忆系统 -->
-  <RimWorldMCP_Tool_add_memory>添加记忆</RimWorldMCP_Tool_add_memory>
-  <RimWorldMCP_Tool_list_memories>记忆列表</RimWorldMCP_Tool_list_memories>
-  <RimWorldMCP_Tool_delete_memory>删除记忆</RimWorldMCP_Tool_delete_memory>
-  <RimWorldMCP_Tool_update_memory>更新记忆</RimWorldMCP_Tool_update_memory>
 
 </LanguageData>

@@ -42,10 +42,10 @@ namespace RimWorldMCP.Tools
                         if (tool.GetTargetRange(doc.RootElement) != null)
                             s_cameraToolNames.Add(tool.Name);
                     }
-                    catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 测试工具 GetTargetRange 失败 ({type.Name}): {ex.Message}"); }
+                    catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 测试工具 GetTargetRange 失败 ({type.Name}): {FormatExceptionChain(ex)}"); }
                 }
             }
-            catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 反射扫描 Tool 失败: {ex.Message}"); }
+            catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 反射扫描 Tool 失败: {FormatExceptionChain(ex)}"); }
         }
 
         /// <summary>获取所有支持自动移动视角的工具名称（已排序）</summary>
@@ -130,7 +130,7 @@ namespace RimWorldMCP.Tools
                     }
 
                     // 游戏状态预检：在所有 DispatchAsync 之前拦截，防止主线程不可用时卡死
-                    if (Current.Game == null)
+                    if (!(tool is INoMapRequired) && Current.Game == null)
                     {
                         return new ToolCallResult
                         {
@@ -141,7 +141,7 @@ namespace RimWorldMCP.Tools
                             IsError = true
                         };
                     }
-                    if (LongEventHandler.ForcePause)
+                    if (!(tool is INoMapRequired) && LongEventHandler.ForcePause)
                     {
                         return new ToolCallResult
                         {
@@ -175,7 +175,7 @@ namespace RimWorldMCP.Tools
                             return true;
                         });
                     }
-                    catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 自动追踪事件调度失败: {ex.Message}"); }
+                    catch (Exception ex) { McpLog.Warn($"[ToolRegistry] 自动追踪事件调度失败: {FormatExceptionChain(ex)}"); }
 
                     return new ToolCallResult
                     {
@@ -188,11 +188,12 @@ namespace RimWorldMCP.Tools
                 }
                 catch (Exception ex)
                 {
+                    McpLog.Error($"[ToolRegistry] Tool 执行异常 ({name}): {FormatExceptionChain(ex)}");
                     return new ToolCallResult
                     {
                         Content = new List<ContentItem>
                         {
-                            new() { Type = "text", Text = $"Tool 执行异常: {ex.Message}" }
+                            new() { Type = "text", Text = $"Tool 执行异常: {ex.GetType().Name}: {ex.Message}" }
                         },
                         IsError = true
                     };
@@ -213,6 +214,14 @@ namespace RimWorldMCP.Tools
             };
             }
             finally { _gate.Release(); }
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

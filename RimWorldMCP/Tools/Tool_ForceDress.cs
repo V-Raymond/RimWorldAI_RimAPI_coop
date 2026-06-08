@@ -92,7 +92,7 @@ namespace RimWorldMCP.Tools
                     if (ok) successList.Add(msg);
                     else failList.Add(msg);
                 }
-                catch (Exception ex) { failList.Add($"异常: {ex.Message}"); }
+                catch (Exception ex) { failList.Add($"异常: {FormatExceptionChain(ex)}"); }
             }
 
             var sb = new System.Text.StringBuilder();
@@ -148,18 +148,53 @@ namespace RimWorldMCP.Tools
             if (args == null) return null;
             var map = Find.CurrentMap;
             if (map == null) return null;
-            if (!args.Value.TryGetProperty("doer_id", out var jD) || !jD.TryGetInt32(out var doerId)) return null;
-            if (!args.Value.TryGetProperty("target_id", out var jT) || !jT.TryGetInt32(out var targetId)) return null;
-            if (!args.Value.TryGetProperty("thing_id", out var jI) || !jI.TryGetInt32(out var thingId)) return null;
-            var doer = CameraHelper.FindPawnById(map, doerId);
-            var target = CameraHelper.FindPawnById(map, targetId);
-            var thing = CameraHelper.FindThingById(map, thingId);
+
+            int? rangeMinX = null, rangeMinZ = null, rangeMaxX = null, rangeMaxZ = null;
+            if (args.Value.TryGetProperty("equipments", out var jEqs) && jEqs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var je in jEqs.EnumerateArray())
+                {
+                    if (je.TryGetProperty("doer_id", out var jD) && jD.TryGetInt32(out var doerId))
+                        IncludeThing(CameraHelper.FindPawnById(map, doerId), ref rangeMinX, ref rangeMinZ, ref rangeMaxX, ref rangeMaxZ);
+                    if (je.TryGetProperty("target_id", out var jT) && jT.TryGetInt32(out var targetId))
+                        IncludeThing(CameraHelper.FindPawnById(map, targetId), ref rangeMinX, ref rangeMinZ, ref rangeMaxX, ref rangeMaxZ);
+                    if (je.TryGetProperty("thing_id", out var jI) && jI.TryGetInt32(out var thingId))
+                        IncludeThing(CameraHelper.FindThingById(map, thingId), ref rangeMinX, ref rangeMinZ, ref rangeMaxX, ref rangeMaxZ);
+                }
+                return rangeMinX.HasValue && rangeMinZ.HasValue && rangeMaxX.HasValue && rangeMaxZ.HasValue
+                    ? (rangeMinX.Value, rangeMinZ.Value, rangeMaxX.Value, rangeMaxZ.Value)
+                    : ((int, int, int, int)?)null;
+            }
+
+            if (!args.Value.TryGetProperty("doer_id", out var jSingleDoer) || !jSingleDoer.TryGetInt32(out var singleDoerId)) return null;
+            if (!args.Value.TryGetProperty("target_id", out var jSingleTarget) || !jSingleTarget.TryGetInt32(out var singleTargetId)) return null;
+            if (!args.Value.TryGetProperty("thing_id", out var jSingleThing) || !jSingleThing.TryGetInt32(out var singleThingId)) return null;
+            var doer = CameraHelper.FindPawnById(map, singleDoerId);
+            var target = CameraHelper.FindPawnById(map, singleTargetId);
+            var thing = CameraHelper.FindThingById(map, singleThingId);
             if (doer == null || target == null || thing == null) return null;
             int minX = Math.Min(Math.Min(doer.Position.x, target.Position.x), thing.Position.x);
             int maxX = Math.Max(Math.Max(doer.Position.x, target.Position.x), thing.Position.x);
             int minZ = Math.Min(Math.Min(doer.Position.z, target.Position.z), thing.Position.z);
             int maxZ = Math.Max(Math.Max(doer.Position.z, target.Position.z), thing.Position.z);
             return (minX, minZ, maxX, maxZ);
+        }
+
+        private static void IncludeThing(Thing? thing, ref int? minX, ref int? minZ, ref int? maxX, ref int? maxZ)
+        {
+            if (thing == null) return;
+            minX = minX.HasValue ? Math.Min(minX.Value, thing.Position.x) : thing.Position.x;
+            minZ = minZ.HasValue ? Math.Min(minZ.Value, thing.Position.z) : thing.Position.z;
+            maxX = maxX.HasValue ? Math.Max(maxX.Value, thing.Position.x) : thing.Position.x;
+            maxZ = maxZ.HasValue ? Math.Max(maxZ.Value, thing.Position.z) : thing.Position.z;
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

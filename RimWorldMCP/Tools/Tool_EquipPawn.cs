@@ -88,7 +88,7 @@ namespace RimWorldMCP.Tools
                     if (ok) successList.Add(msg);
                     else failList.Add(msg);
                 }
-                catch (Exception ex) { failList.Add($"异常: {ex.Message}"); }
+                catch (Exception ex) { failList.Add($"异常: {FormatExceptionChain(ex)}"); }
             }
 
             var sb = new System.Text.StringBuilder();
@@ -146,6 +146,22 @@ namespace RimWorldMCP.Tools
             if (args == null) return null;
             var map = Find.CurrentMap;
             if (map == null) return null;
+
+            int? minX = null, minZ = null, maxX = null, maxZ = null;
+            if (args.Value.TryGetProperty("equipments", out var jEqs) && jEqs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var je in jEqs.EnumerateArray())
+                {
+                    if (je.TryGetProperty("colonist_id", out var jC) && jC.TryGetInt32(out var colonistId))
+                        IncludeThing(CameraHelper.FindPawnById(map, colonistId), ref minX, ref minZ, ref maxX, ref maxZ);
+                    if (je.TryGetProperty("thing_id", out var jT) && jT.TryGetInt32(out var thingId))
+                        IncludeThing(CameraHelper.FindThingById(map, thingId), ref minX, ref minZ, ref maxX, ref maxZ);
+                }
+                return minX.HasValue && minZ.HasValue && maxX.HasValue && maxZ.HasValue
+                    ? (minX.Value, minZ.Value, maxX.Value, maxZ.Value)
+                    : ((int, int, int, int)?)null;
+            }
+
             if (!args.Value.TryGetProperty("colonist_id", out var jA) || !jA.TryGetInt32(out var idA)) return null;
             if (!args.Value.TryGetProperty("thing_id", out var jB) || !jB.TryGetInt32(out var idB)) return null;
             var a = CameraHelper.FindPawnById(map, idA);
@@ -153,6 +169,15 @@ namespace RimWorldMCP.Tools
             if (a == null || b == null) return null;
             return (Math.Min(a.Position.x, b.Position.x), Math.Min(a.Position.z, b.Position.z),
                     Math.Max(a.Position.x, b.Position.x), Math.Max(a.Position.z, b.Position.z));
+        }
+
+        private static void IncludeThing(Thing? thing, ref int? minX, ref int? minZ, ref int? maxX, ref int? maxZ)
+        {
+            if (thing == null) return;
+            minX = minX.HasValue ? Math.Min(minX.Value, thing.Position.x) : thing.Position.x;
+            minZ = minZ.HasValue ? Math.Min(minZ.Value, thing.Position.z) : thing.Position.z;
+            maxX = maxX.HasValue ? Math.Max(maxX.Value, thing.Position.x) : thing.Position.x;
+            maxZ = maxZ.HasValue ? Math.Max(maxZ.Value, thing.Position.z) : thing.Position.z;
         }
 
         private static string FormatExceptionChain(Exception ex)
