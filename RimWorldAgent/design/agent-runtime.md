@@ -167,7 +167,7 @@ Phase 2 — 部署:
   敌人路上 → draft_pawn + move_pawn + equip_pawn → 等敌人接近
 
 Phase 3 — 接敌 (1x):
-  attack_pawn / force_attack → tend_now (我方) → 实时观察
+  hold_combat_position / force_attack → tend_now (我方) → 实时观察
 
 Phase 4 — 收尾:
   敌人全灭/逃跑 → capture_pawn + strip_pawn + haul_item + tend_now → 解除征召 → exit_combat_role

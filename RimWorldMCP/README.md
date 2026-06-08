@@ -154,13 +154,14 @@ L01=#1.14D1.14#1
 | `force_surgery` | 强制执行指定手术 |
 | `get_available_surgeries` | 列出可用手术 |
 
-### 战斗 (6)
+### 战斗 (7)
 | `equip_pawn` | 强制殖民者拾取并装备 |
 | `draft_pawn` | 征召/解除征召 |
 | `get_defense_status` | 防御状态报告 |
-| `attack_pawn` | 攻击指定目标 |
+| `hold_combat_position` | 战斗守位并自动开火 |
 | `force_attack` | 强制攻击（无视掩体） |
 | `find_enemies` | 搜索地图上的敌人 |
+| `shooting_position_grid` | 射击位评分 |
 
 ### 右键菜单操作 (10)
 | `pick_up_item` | 拾取物品 |
@@ -207,8 +208,9 @@ L01=#1.14D1.14#1
 | `allow_item` | 允许区域内物品 |
 | `claim_item` | 占有物品/建筑为玩家派系 |
 
-### 区域/设施 (8)
+### 区域/设施 (9)
 | `set_bed_owner_type` | 设置床位类型（医疗/囚犯/殖民者） |
+| `set_prisoner_policy` | 设置囚犯政策 |
 | `set_temp_control` | 设置温度控制设备 |
 | `list_devices` | 列出/搜索地图设备和可用操作 |
 | `get_device_info` | 获取设备状态、组件和 UI/Gizmo 操作 ID |

@@ -77,6 +77,7 @@
   <!-- 战斗 -->
   <RimWorldMCP_Tool_draft_pawn>征召切换</RimWorldMCP_Tool_draft_pawn>
   <RimWorldMCP_Tool_get_defense_status>防御状态</RimWorldMCP_Tool_get_defense_status>
+  <RimWorldMCP_Tool_hold_combat_position>战斗守位</RimWorldMCP_Tool_hold_combat_position>
   <RimWorldMCP_Tool_force_attack>强制攻击</RimWorldMCP_Tool_force_attack>
   <RimWorldMCP_Tool_find_enemies>搜索敌人</RimWorldMCP_Tool_find_enemies>
 
@@ -183,7 +184,7 @@
 
   <!-- 意识形态/招募 -->
   <RimWorldMCP_Tool_convert_ideo>转换信仰（抽奖）</RimWorldMCP_Tool_convert_ideo>
-  <RimWorldMCP_Tool_recruit_prisoner>招募囚犯（抽奖）</RimWorldMCP_Tool_recruit_prisoner>
+  <RimWorldMCP_Tool_set_prisoner_policy>囚犯政策</RimWorldMCP_Tool_set_prisoner_policy>
 
   <!-- 任务 -->
   <RimWorldMCP_Tool_list_quests>任务列表（分页）</RimWorldMCP_Tool_list_quests>

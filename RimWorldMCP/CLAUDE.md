@@ -218,7 +218,7 @@ Companion 进程由 Agent 侧 `CcbManager` 管理（spawn/stop/Job Object 绑定
 
 | 有 `queue` 参数 | 无 `queue`（永远打断） |
 |---------------|---------------------|
-| haul_item, pick_up_item, equip_pawn, move_pawn | attack_pawn, force_attack |
+| haul_item, pick_up_item, equip_pawn, move_pawn | hold_combat_position, force_attack |
 | force_dress, ingest_item, strip_pawn | arrest_pawn, capture_pawn |
 | drop_equipment, drop_carried | rescue_pawn, tend_now |
 
@@ -348,13 +348,13 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 | `force_surgery` | 强制执行指定手术 | `Bill_Medical` (入队) |
 | `get_available_surgeries` | 列出可用手术（分页） | `RecipeDefOf` |
 
-### 战斗 (7)
+### 战斗 (8)
 | Tool | 说明 | 数据源/操作 |
 |------|------|------------|
 | `equip_pawn` | 批量强制殖民者拾取并装备（`equipments[]` 数组） | `JobDefOf.Equip` / `JobDefOf.Wear` (入队) |
 | `draft_pawn` | 征召/解除征召（`colonist_ids[]` 精确子集） | `pawn.drafter.Drafted` (入队) |
 | `get_defense_status` | 防御状态报告 | `pawn.equipment.Primary`, `map.listerBuildings` |
-| `attack_pawn` | 攻击指定目标 | `JobDefOf.AttackMelee` / `JobDefOf.AttackStatic` (入队) |
+| `hold_combat_position` | 批量前往阵位并进入战斗待命（melee/ranged/hold） | `JobDefOf.Goto` + `JobDefOf.Wait_Combat` (入队) |
 | `force_attack` | 批量攻击（melee/hold_position/auto，支持 `attacks[]` 数组） | `JobDefOf.AttackStatic`/`AttackMelee` (入队) |
 | `find_enemies` | 搜索地图上的敌人（`show_movement` 含移动预测） | `map.mapPawns.AllPawnsSpawned` |
 | `shooting_position_grid` | 射击位评分排名（Top N，复刻游戏原版 CastPositionPreference 公式） | `CoverUtility`, `CanHitTargetFrom` |
@@ -429,10 +429,11 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 | `allow_item` | 允许区域内物品（精确范围版） | `t.SetForbidden(false)` (入队) |
 | `claim_item` | 占有区域内物品/建筑为玩家派系 | `t.SetFaction(Faction.OfPlayer)` (入队) |
 
-### 区域管理 (6)
+### 区域管理 (7)
 | Tool | 说明 | 数据源/操作 |
 |------|------|------------|
 | `set_bed_owner_type` | 设置床位类型（医疗/囚犯/殖民者） | `Building_Bed.Medical`, `CompAssignableToPawn` (入队) |
+| `set_prisoner_policy` | 设置囚犯政策（劝导并招募、同化并招募、释放、处决等），默认补典狱工作 | `Pawn_GuestTracker.SetExclusiveInteraction` (入队) |
 | `set_temp_control` | 设置温度控制设备 | `CompTempControl` (入队) |
 | `list_devices` | 列出/搜索地图设备和可用操作 | `map.listerThings.AllThings`, `ThingComp`, `Thing.GetGizmos` |
 | `get_device_info` | 获取设备/设备组状态、组件和 UI/Gizmo 操作 ID | `Thing.GetGizmos`, `ThingComp` (入队) |

@@ -112,7 +112,7 @@ return (Min(a.Pos.x, b.Pos.x), Min(a.Pos.z, b.Pos.z),
 **适用工具**：
 | 工具 | 参数 1 | 参数 2 |
 |------|--------|--------|
-| `attack_pawn` | `colonist_id` | `target_id` |
+| `hold_combat_position` | `positions[].colonist_id` | `positions[].pos_x/pos_y` |
 | `arrest_pawn` | `doer_id` | `target_id` |
 | `capture_pawn` | `doer_id` | `target_id` |
 | `rescue_pawn` | `doer_id` | `target_id` |

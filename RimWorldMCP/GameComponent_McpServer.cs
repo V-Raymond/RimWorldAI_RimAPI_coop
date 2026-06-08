@@ -52,6 +52,7 @@ namespace RimWorldMCP
             McpCommandQueue.ProcessPending();
             Tool_AdvanceTick.ProcessPending();
             Tool_AdvanceTick.LowSpeedTick();
+            Tool_SetPrisonerPolicy.ProcessPendingAutoPolicies();
             McpOssUploader.ProcessPendingUploads();
             McpCommandQueue.ProcessDeferredCleanup();
             CameraHelper.AutoTrackColonistsTick();
