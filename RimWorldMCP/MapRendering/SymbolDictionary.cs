@@ -68,7 +68,10 @@ namespace RimWorldMCP.MapRendering
                     var files = Directory.GetFiles(dir, "*.*").Take(20);
                     McpLog.Info($"[SymbolDictionary] 目录 {dir} 内容: {string.Join(", ", files.Select(f => Path.GetFileName(f)))}");
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    McpLog.Warn($"[SymbolDictionary] 列出词表目录失败: {FormatExceptionChain(ex)}");
+                }
 
                 throw new FileNotFoundException(
                     $"[SymbolDictionary] 未找到词表文件: {path}\n" +
@@ -255,6 +258,14 @@ namespace RimWorldMCP.MapRendering
                 }
             }
             return sb.ToString();
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

@@ -172,7 +172,10 @@ namespace RimWorldMCP.Tools
                                 if (TradeUtility.PlayerSellableNow(thing, virtShip))
                                     _addToTradeables.Invoke(deal, new object[] { thing, Transactor.Colony });
                             }
-                            catch { /* 单个物品跳过 */ }
+                            catch (Exception ex)
+                            {
+                                McpLog.Debug($"[Trade] 跳过不可加入交易的物品 thingID={thing.thingIDNumber}: {FormatExceptionChain(ex)}");
+                            }
                         }
                         // 遍历殖民地所有可出售的Pawn
                         foreach (var p in map.mapPawns.AllPawnsSpawned)
@@ -181,7 +184,10 @@ namespace RimWorldMCP.Tools
                                 && TradeUtility.PlayerSellableNow(p, virtShip))
                             {
                                 try { _addToTradeables.Invoke(deal, new object[] { p, Transactor.Colony }); }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    McpLog.Debug($"[Trade] 跳过不可加入交易的 Pawn thingID={p.thingIDNumber}: {FormatExceptionChain(ex)}");
+                                }
                             }
                         }
                         tradeables = (List<Tradeable>)_allTradeablesProp.GetValue(deal);
@@ -288,6 +294,15 @@ namespace RimWorldMCP.Tools
             }
             return null;
         }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
+        }
+
         public (int minX, int minZ, int maxX, int maxZ)? GetTargetRange(JsonElement? args) => null;
     }
 }

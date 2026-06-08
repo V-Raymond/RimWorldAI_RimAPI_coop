@@ -22,6 +22,10 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         /// <summary>工具耗时暂存（toolId → ms），OnToolUse 写，OnToolResultRecorded 读+清理</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, double> _toolDurations = new();
+        private static readonly object _wireLock = new();
+        private static CcbWebSocket? _wiredWs;
+        private static Action<SdkMessage>? _sdkMessageHandler;
+        private static bool _uiHandlersWired;
 
         /// <summary>读取工具耗时（不删除，用于 SdkMessageParser 读取并推送到 UI）</summary>
         internal static double? PeekToolDuration(string toolId)
@@ -32,33 +36,56 @@ namespace RimWorldAgent.Core.AgentRuntime
         /// <summary>CCB ↔ UIMessageBus 双向中继：SDK↔UiMessage 转换在 AgentCore 完成</summary>
         public static void WireUIMessageBus(CcbWebSocket ws)
         {
-            // SDK 消息 → UiMessage → UIMessageBus 广播
-            ws.OnSdkMessage += msg =>
+            lock (_wireLock)
             {
-                var messages = SdkMessageParser.ParseToUiMessages(msg);
-                if (messages.Count > 0) UIMessageBus.PushUiMessages(messages);
-            };
+                _sdkMessageHandler ??= msg =>
+                {
+                    var messages = SdkMessageParser.ParseToUiMessages(msg);
+                    if (messages.Count > 0) UIMessageBus.PushUiMessages(messages);
+                };
+
+                if (_wiredWs != null && !ReferenceEquals(_wiredWs, ws))
+                    _wiredWs.OnSdkMessage -= _sdkMessageHandler;
+
+                _wiredWs = ws;
+                ws.OnSdkMessage -= _sdkMessageHandler;
+                ws.OnSdkMessage += _sdkMessageHandler;
+
+                if (_uiHandlersWired) return;
+                _uiHandlersWired = true;
+            }
 
             // 客户端 chat → 中断当前会话 + 预算检查 + 回显 + CCB
             UIMessageBus.OnChat += async (text, thinking) =>
             {
-                CoreLog.Debug($"[AgentLoop] OnChat text=\"{text.Substring(0, Math.Min(text.Length, 60))}\"");
+                CoreLog.Debug($"[AgentLoop] OnChat len={text.Length}");
+                var currentWs = GetWiredWebSocket();
+                if (currentWs == null || !currentWs.IsReady)
+                {
+                    UIMessageBus.PushUiMessage(UiMessage.Error("CCB WebSocket 未就绪，无法发送消息。"));
+                    return;
+                }
                 if (BudgetLimit > 0 && TokenUsageTracker.TotalAllTokens >= BudgetLimit)
                 {
                     UIMessageBus.PushUiMessage(UiMessage.Error($"Token 预算已用尽 ({TokenUsageTracker.TotalAllTokens}/{BudgetLimit})"));
                     return;
                 }
                 ConversationStore?.RecordUserMessage(text);
-                await ws.SendAbort();
+                await currentWs.SendAbort();
                 // 打断运行中的会话时追加 Skill 提示
                 if (AgentOrchestrator.IsRunning)
                     text += AgentOrchestrator.InterruptSkillHint;
                 UIMessageBus.PushUiMessage(UiMessage.User(text));
-                await ws.SendChat(ChatChannel.Bus, text, thinking);
+                await currentWs.SendChat(ChatChannel.Bus, text, thinking);
             };
 
             // 客户端 abort → CCB
-            UIMessageBus.OnAbort += async () => await ws.SendAbort();
+            UIMessageBus.OnAbort += async () =>
+            {
+                var currentWs = GetWiredWebSocket();
+                if (currentWs != null && currentWs.IsReady)
+                    await currentWs.SendAbort();
+            };
 
             // 新客户端连接 → 推送初始状态
             UIMessageBus.OnClientConnected += socket =>
@@ -107,7 +134,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 catch (Exception ex)
                 {
                     CoreLog.Warn($"[AgentLoop] 历史查询失败: {ex.Message}");
-                    try { socket.Send(UiMessage.Error($"历史查询失败: {ex.Message}").ToJson()); } catch { }
+                    try { socket.Send(UiMessage.Error($"历史查询失败: {ex.Message}").ToJson()); }
+                    catch (Exception sendEx) { CoreLog.Warn($"[AgentLoop] 历史查询错误回写失败: {FormatExceptionChain(sendEx)}"); }
                 }
             };
 
@@ -126,7 +154,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 catch (Exception ex)
                 {
                     CoreLog.Warn($"[AgentLoop] 历史翻页失败: {ex.Message}");
-                    try { socket.Send(UiMessage.Error($"历史翻页失败: {ex.Message}").ToJson()); } catch { }
+                    try { socket.Send(UiMessage.Error($"历史翻页失败: {ex.Message}").ToJson()); }
+                    catch (Exception sendEx) { CoreLog.Warn($"[AgentLoop] 历史翻页错误回写失败: {FormatExceptionChain(sendEx)}"); }
                 }
             };
 
@@ -144,7 +173,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                 catch (Exception ex)
                 {
                     CoreLog.Warn($"[AgentLoop] 工具统计查询失败: {ex.Message}");
-                    try { socket.Send(UiMessage.Error($"工具统计查询失败: {ex.Message}").ToJson()); } catch { }
+                    try { socket.Send(UiMessage.Error($"工具统计查询失败: {ex.Message}").ToJson()); }
+                    catch (Exception sendEx) { CoreLog.Warn($"[AgentLoop] 工具统计错误回写失败: {FormatExceptionChain(sendEx)}"); }
                 }
             };
 
@@ -207,8 +237,17 @@ namespace RimWorldAgent.Core.AgentRuntime
                             ConversationStore?.RecordSystemMessage(err);
                     }
                 }
-                catch { /* best-effort，不影响显示管线 */ }
+                catch (Exception ex)
+                {
+                    CoreLog.Warn($"[AgentLoop] 显示消息录制失败: {FormatExceptionChain(ex)}");
+                }
             };
+        }
+
+        private static CcbWebSocket? GetWiredWebSocket()
+        {
+            lock (_wireLock)
+                return _wiredWs;
         }
 
         /// <summary>剥离 RimWorld 富文本标签（color/size/b/i），保留纯文本。
@@ -229,6 +268,14 @@ namespace RimWorldAgent.Core.AgentRuntime
                 db.TotalAllTokens, BudgetLimit, "Idle",
                 db.TotalCacheReadTokens, db.TotalInputTokens,
                 db.TotalCacheCreateTokens, 0, TokenUsageTracker.CurrentInputTokens));
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
 
         /// <summary>MCP 游戏事件 → 按级别分流：Critical 中断，Warning/Info/Silent 仅 suffix</summary>

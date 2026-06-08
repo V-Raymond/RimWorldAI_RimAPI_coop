@@ -619,7 +619,12 @@ function connect() {
 
   ws.onmessage = function(event) {
     var msg;
-    try { msg = JSON.parse(event.data); } catch(e) { return; }
+    try { msg = JSON.parse(event.data); }
+    catch(e) {
+      const raw = String(event.data || '');
+      console.warn('[WebUI] WS 消息解析失败:', e, 'raw=', raw.slice(0, 1000));
+      return;
+    }
     var r = document.querySelector('#app')._x_dataStack[0];
     handleWS(msg, r);
   };

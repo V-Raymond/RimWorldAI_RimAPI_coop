@@ -172,7 +172,10 @@ namespace RimWorldAgent.Core
                             }
                         }
                     }
-                    catch (Exception ex) { CoreLog.Info($"[UIMessageBus] 消息解析失败: {ex.Message}"); }
+                    catch (Exception ex)
+                    {
+                        CoreLog.Info($"[UIMessageBus] 消息解析失败: {ex.GetType().Name}: {ex.Message}; raw={TruncateForLog(msg, 1000)}");
+                    }
                 };
             });
             CoreLog.Info($"[UIMessageBus] 已启动 ws://0.0.0.0:{port}");
@@ -180,16 +183,6 @@ namespace RimWorldAgent.Core
 
         public static void Stop()
         {
-            OnChat = null;
-            OnAbort = null;
-            OnDisplayMessage = null;
-            OnHistory = null;
-            OnAssistantContent = null;
-            OnHistoryBefore = null;
-            OnToolCallRecorded = null;
-            OnToolResultRecorded = null;
-            OnClientConnected = null;
-            OnToolStats = null;
             if (_server == null) return;
             foreach (var kv in _clients) { try { kv.Value.Close(); } catch (Exception ex) { CoreLog.Info($"[UIMessageBus] 关闭客户端连接失败: {ex.Message}"); } }
             _clients.Clear();
@@ -206,6 +199,12 @@ namespace RimWorldAgent.Core
                 Mode = th.TryGetProperty("mode", out var m) ? m.GetString() ?? "adaptive" : "adaptive",
                 Effort = th.TryGetProperty("effort", out var e) ? e.GetString() ?? "high" : "high",
             };
+        }
+
+        private static string TruncateForLog(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
         }
     }
 }

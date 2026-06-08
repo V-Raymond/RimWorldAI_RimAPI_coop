@@ -184,6 +184,7 @@ namespace RimWorldAgent.Core.AgentRuntime
                     if (wsOk)
                     {
                         AgentOrchestrator.CcbWs = _ccbWs;
+                        AgentLoop.WireUIMessageBus(_ccbWs);
                         _logInfo("[AgentEngine] CCB WS: 已连接");
                         ccbReady = true;
                     }
@@ -228,7 +229,11 @@ namespace RimWorldAgent.Core.AgentRuntime
                     };
                     _ = _ccbWs.ConnectAsync().ContinueWith(t =>
                     {
-                        if (t.Result) AgentOrchestrator.CcbWs = _ccbWs!;
+                        if (t.Result)
+                        {
+                            AgentOrchestrator.CcbWs = _ccbWs!;
+                            AgentLoop.WireUIMessageBus(_ccbWs!);
+                        }
                         else { _ccbWs?.Dispose(); _ccbWs = null; }
                     });
                 }
@@ -239,7 +244,11 @@ namespace RimWorldAgent.Core.AgentRuntime
             {
                 _ = _ccbWs.ConnectAsync().ContinueWith(t =>
                 {
-                    if (t.Result) AgentOrchestrator.CcbWs =(_ccbWs!);
+                    if (t.Result)
+                    {
+                        AgentOrchestrator.CcbWs = _ccbWs!;
+                        AgentLoop.WireUIMessageBus(_ccbWs!);
+                    }
                 });
             }
         }
@@ -337,15 +346,27 @@ namespace RimWorldAgent.Core.AgentRuntime
 
         private async Task RunAgent(bool isPlan = false, bool isInterrupted = false)
         {
+            var ccbWs = _ccbWs;
+            if (ccbWs == null || !ccbWs.IsReady)
+            {
+                _logWarn("[AgentEngine] CCB WS 未就绪，跳过本轮唤醒");
+                return;
+            }
+
             GamePaceController.ShouldSkipResume = null;
             AgentOrchestrator.BeginSession();
-            _logInfo($"[AgentEngine] 唤醒 commander (Day={_gameState.GameDay}, Plan={isPlan}, Interrupted={isInterrupted})");
+            try
+            {
+                _logInfo($"[AgentEngine] 唤醒 commander (Day={_gameState.GameDay}, Plan={isPlan}, Interrupted={isInterrupted})");
 
-            var prompt = await _ctx!.BuildAsync(isInterrupted: isInterrupted);
-            await AgentLoop.RunSessionAsync(prompt, _mcp!, _ccbWs);
-
-            AgentOrchestrator.EndSession();
-            _logInfo("[AgentEngine] commander 休眠");
+                var prompt = await _ctx!.BuildAsync(isInterrupted: isInterrupted);
+                await AgentLoop.RunSessionAsync(prompt, _mcp!, ccbWs);
+            }
+            finally
+            {
+                AgentOrchestrator.EndSession();
+                _logInfo("[AgentEngine] commander 休眠");
+            }
         }
 
         public void Dispose()

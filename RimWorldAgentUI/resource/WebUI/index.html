@@ -930,7 +930,11 @@
     };
 
     ws.onmessage = (event) => {
-      try { const msg = JSON.parse(event.data); handleMessage(msg); } catch {}
+      try { const msg = JSON.parse(event.data); handleMessage(msg); }
+      catch (err) {
+        const raw = String(event.data || '');
+        console.warn('[WebUI] WS 消息解析失败:', err, 'raw=', raw.slice(0, 1000));
+      }
     };
 
     ws.onclose = () => {
@@ -1596,22 +1600,19 @@
   var scrollRaf = 0;
   var scrollEventTimer = 0;
   var SNAP_THRESHOLD = 50;   // 距底部 < 50px 视为已到底，恢复磁吸
-  var BREAK_THRESHOLD = 100;  // 距底部 > 100px 才断磁，避免快速消息误触
-  var justScrolledToBottom = false;
 
   function scrollNow() {
     cancelAnimationFrame(scrollRaf);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    justScrolledToBottom = true;
+    messagesEl.scrollTop = Math.max(0, messagesEl.scrollHeight - messagesEl.clientHeight);
     scrollRaf = 0;
   }
 
   function scrollDeferred() {
-    if (!autoScrollEnabled || userScrolledUp) return;
+    if (!autoScrollEnabled) return;
     if (scrollRaf) return;
     scrollRaf = requestAnimationFrame(function() {
       scrollRaf = 0;
-      if (!userScrolledUp) scrollNow();
+      if (autoScrollEnabled) scrollNow();
     });
   }
 
@@ -1621,19 +1622,13 @@
       var diff = messagesEl.scrollHeight - messagesEl.clientHeight - messagesEl.scrollTop;
       // 向上滚动到顶部 → 加载更早历史（防抖+宽阈值）
       if (messagesEl.scrollTop < 200 && !loadingOlder && hasMoreOlder && oldestId) { loadOlder(); }
-      if (userScrolledUp) {
-        // 已断磁：检查是否滚回底部，自动恢复磁吸
-        if (diff < SNAP_THRESHOLD) {
-          userScrolledUp = false;
-          newMsgPill.style.display = 'none';
-        }
-      } else if (justScrolledToBottom) {
-        justScrolledToBottom = false;
+      if (autoScrollEnabled) {
+        userScrolledUp = false;
+        newMsgPill.style.display = 'none';
+        if (diff > 0) scrollDeferred();
       } else {
-        if (diff > BREAK_THRESHOLD) {
-          userScrolledUp = true;
-          newMsgPill.style.display = 'block';
-        }
+        userScrolledUp = diff >= SNAP_THRESHOLD;
+        newMsgPill.style.display = userScrolledUp ? 'block' : 'none';
       }
     }, 100);
   }, { passive: true });

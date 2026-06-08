@@ -24,7 +24,9 @@ function resolveEntryFile(packageDir: string): string | null {
       if (!candidate) {
         candidate = pkg.module ?? pkg.main;
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[cc-companion] 读取 SDK package.json 失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   if (candidate) return join(packageDir, candidate);

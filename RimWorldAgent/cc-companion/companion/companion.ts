@@ -39,7 +39,9 @@ function sdkLog(dir: '→' | '←', data: string) {
   try {
     const now = new Date().toISOString();
     appendFileSync(sdkLogPath, `[${now}] ${dir} ${data}\n`, 'utf8');
-  } catch {}
+  } catch (err) {
+    log(`SDK 日志写入失败: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function main() {
@@ -168,7 +170,8 @@ async function main() {
   writeFileSync(pidFile, String(process.pid));
 
   function shutdown() {
-    try { unlinkSync(pidFile); } catch {}
+    try { unlinkSync(pidFile); }
+    catch (err) { log(`删除 PID 文件失败: ${err instanceof Error ? err.message : String(err)}`); }
     process.exit(0);
   }
   process.on('SIGINT', shutdown);

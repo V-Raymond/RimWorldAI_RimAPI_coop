@@ -47,8 +47,9 @@ namespace RimWorldMCP.Tools
             JsonElement? options = null;
             if (args.Value.TryGetProperty("options", out var jOpt) && jOpt.ValueKind == JsonValueKind.String)
             {
-                try { options = JsonSerializer.Deserialize<JsonElement>(jOpt.GetString()!); }
-                catch (Exception ex) { McpLog.Warn($"[ApplyBaseTemplate] JSON 解析失败: {ex.Message}"); }
+                var rawOptions = jOpt.GetString() ?? "";
+                try { options = JsonSerializer.Deserialize<JsonElement>(rawOptions); }
+                catch (Exception ex) { McpLog.Warn($"[ApplyBaseTemplate] JSON 解析失败: {ex.GetType().Name}: {ex.Message}; raw={TruncateForLog(rawOptions, 1000)}"); }
             }
 
             return Task.FromResult(templateName switch
@@ -307,6 +308,12 @@ namespace RimWorldMCP.Tools
             sb.AppendLine($"designate_room 从左到右逐一建造 {count} 间卧室（共用墙自动跳过）");
 
             return ToolResult.Success(sb.ToString().TrimEnd());
+        }
+
+        private static string TruncateForLog(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
         }
     }
 }

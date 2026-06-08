@@ -17,6 +17,7 @@ namespace RimWorldAgent
         private IConversationStore? _convStore;
         private bool _initialized;
         private int _lastTick;
+        private bool _agentTickRunning;
 
         public GameComponent_RimWorldAgent(Game game) { }
 
@@ -173,13 +174,26 @@ namespace RimWorldAgent
             _lastTick++;
             if (_lastTick < 125) return; // ~2000ms @60fps
             _lastTick = 0;
+            if (_agentTickRunning) return;
             _ = AgentTickAsync();
         }
 
         private async Task AgentTickAsync()
         {
             if (_engine == null) return;
-            await _engine.TickAsync();
+            _agentTickRunning = true;
+            try
+            {
+                await _engine.TickAsync();
+            }
+            catch (Exception ex)
+            {
+                SafeLog.Warning($"[agent-mod] Agent Tick 异常: {FormatExceptionChain(ex)}");
+            }
+            finally
+            {
+                _agentTickRunning = false;
+            }
         }
 
         public override void ExposeData()
@@ -213,6 +227,14 @@ namespace RimWorldAgent
             {
                 SafeLog.Warning($"[agent-mod] ShutdownEngine 异常 (非致命): {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
 
     }

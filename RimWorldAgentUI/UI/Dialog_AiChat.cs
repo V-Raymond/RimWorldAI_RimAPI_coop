@@ -908,9 +908,20 @@ namespace RimWorldAgent
                 int dayOfQ = GenLocalDate.DayOfQuadrum(map);
                 sb.AppendLine($"日期: {year}年 {seasonName}第{dayOfQ}天");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                SafeLog.Warning($"[Dialog_AiChat] 生成日期摘要失败: {FormatExceptionChain(ex)}");
+            }
             sb.AppendLine($"居民: {colonists.Count}人");
             return sb.ToString();
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

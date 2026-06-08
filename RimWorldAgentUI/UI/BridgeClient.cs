@@ -82,8 +82,8 @@ namespace RimWorldAgent
                 }
             }
             catch (OperationCanceledException) { }
-            catch (WebSocketException) { }
-            catch (Exception ex) { SafeLog.Info($"[BridgeClient] 接收异常: {ex.Message}"); }
+            catch (WebSocketException ex) { SafeLog.Info($"[BridgeClient] WS 接收断开: {FormatExceptionChain(ex)}"); }
+            catch (Exception ex) { SafeLog.Info($"[BridgeClient] 接收异常: {FormatExceptionChain(ex)}"); }
             finally
             {
                 _isConnected = false;
@@ -103,8 +103,8 @@ namespace RimWorldAgent
                     _cts?.Token ?? CancellationToken.None);
             }
             catch (OperationCanceledException) { }
-            catch (WebSocketException) { _isConnected = false; }
-            catch (Exception ex) { SafeLog.Info($"[BridgeClient] 发送失败: {ex.Message}"); }
+            catch (WebSocketException ex) { _isConnected = false; SafeLog.Info($"[BridgeClient] WS 发送失败: {FormatExceptionChain(ex)}"); }
+            catch (Exception ex) { SafeLog.Info($"[BridgeClient] 发送失败: {FormatExceptionChain(ex)}"); }
         }
 
         // ===== 自动重连（固定间隔） =====
@@ -139,8 +139,17 @@ namespace RimWorldAgent
             _cts?.Cancel();
             _cts?.Dispose();
             _cts = null;
-            try { _ws?.Dispose(); } catch { }
+            try { _ws?.Dispose(); }
+            catch (Exception ex) { SafeLog.Info($"[BridgeClient] Dispose WebSocket 异常: {FormatExceptionChain(ex)}"); }
             _ws = null;
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
 
         public void Dispose()

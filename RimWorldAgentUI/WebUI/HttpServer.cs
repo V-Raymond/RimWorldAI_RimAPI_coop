@@ -53,7 +53,8 @@ namespace RimWorldAgent
         public void Stop()
         {
             _cts?.Cancel();
-            try { _listener?.Stop(); _listener?.Close(); } catch { }
+            try { _listener?.Stop(); _listener?.Close(); }
+            catch (Exception ex) { Log.Warning($"[WebUI] HTTP 停止异常: {FormatExceptionChain(ex)}"); }
             _listener = null;
         }
 
@@ -65,7 +66,7 @@ namespace RimWorldAgent
                 try { ctx = await _listener.GetContextAsync(); }
                 catch (OperationCanceledException) { break; }
                 catch (HttpListenerException) { break; }
-                catch (Exception ex) { Log.Warning($"[WebUI] HTTP 接受错误: {ex.Message}"); continue; }
+                catch (Exception ex) { Log.Warning($"[WebUI] HTTP 接受错误: {FormatExceptionChain(ex)}"); continue; }
 
                 _ = Task.Run(() => HandleRequest(ctx), ct);
             }
@@ -106,7 +107,7 @@ namespace RimWorldAgent
                 ctx.Response.Close();
             }
             catch (HttpListenerException) { Log.Warning("[WebUI] 客户端已断开连接（正常网络行为）"); }
-            catch (Exception ex) { Log.Warning($"[WebUI] 请求处理失败: {ex.Message}"); }
+            catch (Exception ex) { Log.Warning($"[WebUI] 请求处理失败: {FormatExceptionChain(ex)}"); }
         }
 
         private static string FindWebRoot()
@@ -118,6 +119,14 @@ namespace RimWorldAgent
             var src = Path.GetFullPath(Path.Combine(asmDir, "..", "..", "..", "resource", "WebUI"));
             if (Directory.Exists(src)) return src;
             return asmDir;
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
 
         public void Dispose() => Stop();

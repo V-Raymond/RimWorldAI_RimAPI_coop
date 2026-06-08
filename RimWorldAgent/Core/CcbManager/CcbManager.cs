@@ -778,7 +778,10 @@ namespace RimWorldAgent.Core.CcbManager
                         CoreLog.Info($"[CcbManager] 杀死残留进程 PID={pid}");
                         proc.Kill(); proc.WaitForExit(3000);
                     }
-                    catch (ArgumentException) { /* 进程已不存在 */ }
+                    catch (ArgumentException ex)
+                    {
+                        CoreLog.Info($"[CcbManager] PID 文件中的进程已不存在 PID={pid}: {FormatExceptionChain(ex)}");
+                    }
                 }
             }
             catch (Exception ex) { CoreLog.Error($"[CcbManager] PID 清理失败: {ex.Message}"); }

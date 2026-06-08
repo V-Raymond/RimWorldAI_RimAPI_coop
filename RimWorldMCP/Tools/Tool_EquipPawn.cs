@@ -111,7 +111,10 @@ namespace RimWorldMCP.Tools
 
             string qualityStr = "";
             try { var cq = thing.TryGetComp<CompQuality>(); if (cq != null) qualityStr = $"({cq.Quality.GetLabel()})"; }
-            catch { }
+            catch (Exception ex)
+            {
+                McpLog.Warn($"[equip_pawn] 读取物品品质失败 thingID={thingId}: {FormatExceptionChain(ex)}");
+            }
 
             bool isWeapon = thing.def.IsWeapon || thing.HasComp<CompEquippable>();
             string err;
@@ -150,6 +153,14 @@ namespace RimWorldMCP.Tools
             if (a == null || b == null) return null;
             return (Math.Min(a.Position.x, b.Position.x), Math.Min(a.Position.z, b.Position.z),
                     Math.Max(a.Position.x, b.Position.x), Math.Max(a.Position.z, b.Position.z));
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
     }
 }

@@ -192,7 +192,10 @@ public class CcbWebSocket : IDisposable
             var line = $"[{DateTime.UtcNow:O}] {dir} {json}\n";
             File.AppendAllText(path, line, Encoding.UTF8);
         }
-        catch {}
+        catch (Exception ex)
+        {
+            CoreLog.Warn($"[CcbWS] 写入 WS 日志失败: {FormatExceptionChain(ex)}");
+        }
     }
 
     private async Task ReceiveLoop(CancellationToken ct)
@@ -305,6 +308,14 @@ public class CcbWebSocket : IDisposable
             else if (evt.Thinking != null)
                 OnAssistantThinking?.Invoke(evt.Thinking);
         }
+    }
+
+    private static string FormatExceptionChain(Exception ex)
+    {
+        var message = $"{ex.GetType().Name}: {ex.Message}";
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            message += $" ← {inner.GetType().Name}: {inner.Message}";
+        return message;
     }
 
     // ========== 心跳 ==========
