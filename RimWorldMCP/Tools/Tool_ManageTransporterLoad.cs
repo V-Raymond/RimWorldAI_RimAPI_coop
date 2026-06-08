@@ -42,6 +42,9 @@ namespace RimWorldMCP.Tools
                     if (map == null) return ToolResult.Error("没有当前地图。");
 
                     var targets = DeviceToolHelper.ResolveTargets(map, args.Value);
+                    var missingIds = DeviceToolHelper.GetMissingThingIdsMessage(targets);
+                    if (!string.IsNullOrEmpty(missingIds))
+                        return ToolResult.Error(missingIds);
                     if (targets.Things.Count == 0)
                         return ToolResult.Error("没有找到目标运输器。");
 

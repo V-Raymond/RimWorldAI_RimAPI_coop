@@ -29,6 +29,7 @@ namespace RimWorldMCP.Tools
         internal sealed class ResolvedTargets
         {
             public List<Thing> Things { get; } = new();
+            public List<int> MissingThingIds { get; } = new();
             public string Source { get; set; } = "";
         }
 
@@ -58,10 +59,18 @@ namespace RimWorldMCP.Tools
             {
                 foreach (var item in jIds.EnumerateArray())
                 {
-                    if (!item.TryGetInt32(out var id)) continue;
+                    if (!item.TryGetInt32(out var id))
+                        throw new InvalidOperationException("thing_ids 只能包含整数。");
                     var thing = CameraHelper.FindThingById(map, id);
-                    if (thing != null && !thing.Destroyed && !result.Things.Contains(thing))
-                        result.Things.Add(thing);
+                    if (thing != null && !thing.Destroyed)
+                    {
+                        if (!result.Things.Contains(thing))
+                            result.Things.Add(thing);
+                    }
+                    else
+                    {
+                        result.MissingThingIds.Add(id);
+                    }
                 }
 
                 result.Source = "thing_ids";
@@ -73,6 +82,8 @@ namespace RimWorldMCP.Tools
                 var thing = CameraHelper.FindThingById(map, thingId);
                 if (thing != null && !thing.Destroyed)
                     result.Things.Add(thing);
+                else
+                    result.MissingThingIds.Add(thingId);
                 result.Source = "thing_id";
                 return result;
             }
@@ -97,6 +108,12 @@ namespace RimWorldMCP.Tools
             throw new InvalidOperationException("需要 thing_id、thing_ids 或 pos_x/pos_y 定位设备。");
         }
 
+        internal static string GetMissingThingIdsMessage(ResolvedTargets targets)
+        {
+            if (targets.MissingThingIds.Count == 0) return "";
+            return $"以下 thing_id 不存在或已销毁: {string.Join(", ", targets.MissingThingIds)}";
+        }
+
         internal static void SelectTargets(IEnumerable<Thing> things)
         {
             Find.Selector.ClearSelection();
@@ -115,60 +132,61 @@ namespace RimWorldMCP.Tools
 
             foreach (var thing in things)
             {
-                IEnumerable<Gizmo> gizmos;
                 try
                 {
-                    gizmos = thing.GetGizmos() ?? Enumerable.Empty<Gizmo>();
+                    foreach (var gizmo in thing.GetGizmos() ?? Enumerable.Empty<Gizmo>())
+                    {
+                        if (gizmo == null || !gizmo.Visible) continue;
+                        var command = gizmo as Command;
+                        var label = SafeCommandText(() => command?.LabelCap ?? command?.Label ?? gizmo.GetType().Name);
+                        var desc = SafeCommandText(() => command?.Desc ?? "");
+                        if (IsDebugCommand(label, desc)) continue;
+
+                        var kind = GetKind(gizmo);
+                        var actionId = kind switch
+                        {
+                            "toggle" => $"ui_toggle:{index}",
+                            "action" => $"ui_action:{index}",
+                            _ => $"ui_gizmo:{index}"
+                        };
+                        var stableActionId = BuildStableActionId(kind, thing, gizmo, label, desc);
+
+                        bool? active = null;
+                        var toggle = gizmo as Command_Toggle;
+                        if (toggle != null)
+                        {
+                            try { active = toggle.isActive?.Invoke(); }
+                            catch (Exception ex) { McpLog.Warn($"[DeviceTool] 读取 Toggle 状态失败: {ex.GetType().Name}: {ex.Message}"); }
+                        }
+
+                        var safeAction = kind == "action" && IsSafeCommandAction(thing, label, desc);
+                        commands.Add(new DeviceCommand
+                        {
+                            Index = index,
+                            Thing = thing,
+                            Gizmo = gizmo,
+                            Command = command,
+                            ActionId = actionId,
+                            StableActionId = stableActionId,
+                            Kind = kind,
+                            Label = label,
+                            Description = desc,
+                            Disabled = gizmo.Disabled,
+                            DisabledReason = command?.disabledReason ?? gizmo.disabledReason ?? "",
+                            IsActive = active,
+                            Executable = kind == "toggle" || safeAction,
+                            ExecuteNote = kind == "toggle"
+                                ? "可执行：调用原版 Command_Toggle.toggleAction"
+                                : safeAction
+                                    ? "可执行：安全 Command_Action allowlist"
+                                    : "仅展示：复杂按钮需专用 adapter"
+                        });
+                        index++;
+                    }
                 }
                 catch (Exception ex)
                 {
                     McpLog.Warn($"[DeviceTool] 枚举 {thing.LabelShort} 的 Gizmo 失败: {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                foreach (var gizmo in gizmos)
-                {
-                    if (gizmo == null || !gizmo.Visible) continue;
-                    var command = gizmo as Command;
-                    var label = SafeCommandText(() => command?.LabelCap ?? command?.Label ?? gizmo.GetType().Name);
-                    var desc = SafeCommandText(() => command?.Desc ?? "");
-                    if (IsDebugCommand(label, desc)) continue;
-
-                    var kind = GetKind(gizmo);
-                    var actionId = kind switch
-                    {
-                        "toggle" => $"ui_toggle:{index}",
-                        "action" => $"ui_action:{index}",
-                        _ => $"ui_gizmo:{index}"
-                    };
-                    var stableActionId = BuildStableActionId(kind, thing, gizmo, label, desc);
-
-                    bool? active = null;
-                    var toggle = gizmo as Command_Toggle;
-                    if (toggle != null)
-                    {
-                        try { active = toggle.isActive?.Invoke(); }
-                        catch (Exception ex) { McpLog.Warn($"[DeviceTool] 读取 Toggle 状态失败: {ex.GetType().Name}: {ex.Message}"); }
-                    }
-
-                    commands.Add(new DeviceCommand
-                    {
-                        Index = index,
-                        Thing = thing,
-                        Gizmo = gizmo,
-                        Command = command,
-                        ActionId = actionId,
-                        StableActionId = stableActionId,
-                        Kind = kind,
-                        Label = label,
-                        Description = desc,
-                        Disabled = gizmo.Disabled,
-                        DisabledReason = command?.disabledReason ?? gizmo.disabledReason ?? "",
-                        IsActive = active,
-                        Executable = kind == "toggle",
-                        ExecuteNote = kind == "toggle" ? "可执行：调用原版 Command_Toggle.toggleAction" : "仅展示：复杂按钮需专用 adapter"
-                    });
-                    index++;
                 }
             }
 
@@ -222,6 +240,51 @@ namespace RimWorldMCP.Tools
             var actions = GetAdapterActions(thing).Select(a => a.id).ToList();
             var actionText = actions.Count == 0 ? "-" : string.Join(",", actions);
             return $"| {thing.thingIDNumber} | {Escape(thing.LabelCap)} | `{thing.def.defName}` | ({thing.Position.x},{thing.Position.z}) | {Escape(GetCompSummary(thing))} | {Escape(actionText)} |";
+        }
+
+        internal static bool IsSafeCommandAction(DeviceCommand command)
+        {
+            return command.Gizmo is Command_Action && IsSafeCommandAction(command.Thing, command.Label, command.Description);
+        }
+
+        private static bool IsSafeCommandAction(Thing thing, string label, string desc)
+        {
+            var text = ((label ?? "") + " " + (desc ?? "")).ToLowerInvariant();
+
+            if (thing.TryGetComp<CompTempControl>() != null && LooksLikeTemperatureCommand(text))
+                return true;
+
+            if (thing is Building_PodLauncher && LooksLikeBuildTransportPodCommand(text))
+                return true;
+
+            if (thing.TryGetComp<CompTransporter>() != null && LooksLikeTransporterSelectionCommand(text))
+                return true;
+
+            return false;
+        }
+
+        private static bool LooksLikeTemperatureCommand(string text)
+        {
+            return text.Contains("温度")
+                || text.Contains("temperature")
+                || text.Contains("temp")
+                || text.Contains("°")
+                || text.Contains("℃");
+        }
+
+        private static bool LooksLikeBuildTransportPodCommand(string text)
+        {
+            var podLabel = ThingDefOf.TransportPod.label?.ToLowerInvariant() ?? "";
+            return (!string.IsNullOrEmpty(podLabel) && text.Contains(podLabel))
+                || text.Contains("transport pod")
+                || text.Contains("运输舱");
+        }
+
+        private static bool LooksLikeTransporterSelectionCommand(string text)
+        {
+            var isSelection = text.Contains("select") || text.Contains("选择");
+            var isTransporter = text.Contains("transporter") || text.Contains("运输器") || text.Contains("运输舱") || text.Contains("shuttle") || text.Contains("穿梭机");
+            return isSelection && isTransporter;
         }
 
         internal static string FormatTransporterDetails(CompTransporter transporter)

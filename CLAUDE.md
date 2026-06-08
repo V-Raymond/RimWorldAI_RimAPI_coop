@@ -81,7 +81,8 @@ SimpleMspServer 被两者共同引用。Agent ↔ companion 通过 WS :19998，A
 - **CcbWebSocket ↔ companion 协议**：仅 4 种消息（C#→comp: `chat`/`abort`；comp→C#: `hello-ok`/SDK 消息）
 - **SdkMessage**：类型化消息模型，与 `@anthropic-ai/claude-agent-sdk` 协议对齐（Assistant/StreamEvent/Result/System/User/Aborted 子类），`FromJson` 工厂完成 type=event 解包 + 未知字段校验
 - **SdkMessageParser**：SdkMessage → UiMessage 转换，不碰 JSON
-- **ProxyToolProvider**：游戏 MCP 工具全部代理到 Agent MCP，SDK 只连 `agent` 端点
+- **ProxyToolProvider**：游戏 MCP 工具全部代理到 Agent MCP，SDK 通过内置 `agent` 端点访问游戏工具
+- **自定义 MCP 服务**：`RimWorldAgent` 设置页可增加 HTTP/SSE/STDIO MCP 服务，`CcbManager` 启动时合并到 `ProjectPath\.mcp.json`，并始终保留内置 `agent` 端点；STDIO 服务写出为 `type=stdio` + `command` + `args/env`，可用 `npx/docker/python/uvx` 等命令启动，旧 `type=npx` 兼容为 `stdio`；`ProjectPath\.rimworld-agent-managed-mcp.json` 记录由设置页写入过的服务名，用于删除时清理且不误删手工服务
 - **UIMessageBus**：只负责 UiMessage WS 广播 + 客户端消息接收，不感知 SDK 格式
 - **RimWorldAgentUI**：独立模组，通过 WS 连接 UIMessageBus，自带 HTTP 服务提供 WebUI
 - **IDbStore + IGameStateProvider**：EXE/MOD 双模抽象，构造注入解耦

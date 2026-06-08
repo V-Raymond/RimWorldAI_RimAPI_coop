@@ -11,6 +11,18 @@ using RimWorldAgent.Core.models;
 
 namespace RimWorldAgent.Core.AgentRuntime
 {
+    public class CustomMcpServerConfig
+    {
+        public bool Enabled { get; set; } = true;
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "http";
+        public string Url { get; set; } = "";
+        public string Command { get; set; } = "npx";
+        public string ArgsText { get; set; } = "";
+        public string EnvText { get; set; } = "";
+        public int Timeout { get; set; } = 300000;
+    }
+
     /// <summary>Agent 引擎配置 — 构造后传 InitAsync</summary>
     public class AgentEngineConfig
     {
@@ -19,6 +31,7 @@ namespace RimWorldAgent.Core.AgentRuntime
         public string McpUrl { get; set; } = "http://localhost:9877";
         public int McpPort { get; set; } = 9877;
         public int AgentMcpPort { get; set; } = 9878;
+        public List<CustomMcpServerConfig> CustomMcpServers { get; set; } = new List<CustomMcpServerConfig>();
         public int CcbPort { get; set; } = 19998;
         public string CcbWsUrl { get; set; } = "ws://127.0.0.1:19998";
         public string? CcbToken { get; set; }
@@ -141,7 +154,8 @@ namespace RimWorldAgent.Core.AgentRuntime
                     mcpPort: _cfg.McpPort, agentMcpPort: _cfg.AgentMcpPort,
                     ccbToken: _cfg.CcbToken, modelName: _cfg.ModelName,
                     budgetLimit: _cfg.TokenBudgetLimit, budgetAction: "Block",
-                    logSdk: _cfg.LogSdkMessages);
+                    logSdk: _cfg.LogSdkMessages,
+                    customMcpServers: _cfg.CustomMcpServers);
                 if (_cfg.CcbAutoStart)
                 {
                     _logInfo("[AgentEngine] 调用 _ccb.Start()...");

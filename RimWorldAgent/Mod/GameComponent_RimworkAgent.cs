@@ -57,7 +57,20 @@ namespace RimWorldAgent
 
                 var gameHost = settings?.GameMcpHost ?? "localhost";
                 var gamePort = settings?.GameMcpPort ?? 9877;
-
+                var customMcpServers = settings?.CustomMcpServers?
+                    .Where(s => s != null)
+                    .Select(s => new CustomMcpServerConfig
+                    {
+                        Enabled = s.Enabled,
+                        Name = s.Name ?? "",
+                        Type = s.Type ?? "http",
+                        Url = s.Url ?? "",
+                        Command = s.Command ?? "npx",
+                        ArgsText = s.ArgsText ?? "",
+                        EnvText = s.EnvText ?? "",
+                        Timeout = s.Timeout
+                    })
+                    .ToList() ?? new System.Collections.Generic.List<CustomMcpServerConfig>();
                 var dbStore = new ScribeDbStore();
                 var gameState = new DirectGameStateProvider();
 
@@ -68,6 +81,7 @@ namespace RimWorldAgent
                     McpUrl = $"http://{gameHost}:{gamePort}",
                     McpPort = gamePort,
                     AgentMcpPort = settings?.AgentMcpPort ?? 9878,
+                    CustomMcpServers = customMcpServers,
                     CcbPort = 19998,
                     CcbWsUrl = "ws://127.0.0.1:19998",
                     ModelName = settings?.ModelName,

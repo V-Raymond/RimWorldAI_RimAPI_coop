@@ -1,7 +1,32 @@
+using System.Collections.Generic;
 using Verse;
 
 namespace RimWorldAgent
 {
+    public class CustomMcpServerSetting : IExposable
+    {
+        public bool Enabled = true;
+        public string Name = "";
+        public string Type = "http";
+        public string Url = "";
+        public string Command = "npx";
+        public string ArgsText = "";
+        public string EnvText = "";
+        public int Timeout = 300000;
+
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref Enabled, "enabled", true);
+            Scribe_Values.Look(ref Name, "name", "");
+            Scribe_Values.Look(ref Type, "type", "http");
+            Scribe_Values.Look(ref Url, "url", "");
+            Scribe_Values.Look(ref Command, "command", "npx");
+            Scribe_Values.Look(ref ArgsText, "argsText", "");
+            Scribe_Values.Look(ref EnvText, "envText", "");
+            Scribe_Values.Look(ref Timeout, "timeout", 300000);
+        }
+    }
+
     public class AgentModSettings : ModSettings
     {
         // 模型
@@ -19,6 +44,7 @@ namespace RimWorldAgent
         public string GameMcpHost = "localhost";
         public int GameMcpPort = 9877;
         public int AgentMcpPort = 9878;
+        public List<CustomMcpServerSetting> CustomMcpServers = new List<CustomMcpServerSetting>();
 
         // Agent 行为
         public bool AgentAutoRun = true;
@@ -48,6 +74,8 @@ namespace RimWorldAgent
             Scribe_Values.Look(ref GameMcpHost, "gameMcpHost", "localhost");
             Scribe_Values.Look(ref GameMcpPort, "gameMcpPort", 9877);
             Scribe_Values.Look(ref AgentMcpPort, "agentMcpPort", 9878);
+            Scribe_Collections.Look(ref CustomMcpServers, "customMcpServers", LookMode.Deep);
+            if (CustomMcpServers == null) CustomMcpServers = new List<CustomMcpServerSetting>();
             Scribe_Values.Look(ref AgentAutoRun, "agentAutoRun", true);
             Scribe_Values.Look(ref PlanSpeed, "planSpeed", "paused");
             Scribe_Values.Look(ref SkillsDir, "skillsDir", "");

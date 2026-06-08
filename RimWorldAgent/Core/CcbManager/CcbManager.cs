@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using RimWorldAgent.Core.AgentRuntime;
 
@@ -23,6 +26,8 @@ namespace RimWorldAgent.Core.CcbManager
         private readonly long _budgetLimit;
         private readonly string _budgetAction;
         private readonly bool _logSdk;
+        private readonly List<CustomMcpServerConfig> _customMcpServers;
+        private const string ManagedMcpServerNamesFile = ".rimworld-agent-managed-mcp.json";
         private bool _ready;
         private IntPtr _jobHandle = IntPtr.Zero;
         private bool _starting; // 防止 Start() 重入
@@ -33,7 +38,7 @@ namespace RimWorldAgent.Core.CcbManager
         /// <summary>TickAndRestart 重启了 companion 进程时为 true，调用方检查后应清除</summary>
         public bool WasRestarted { get; set; }
 
-        public CcbManager(string companionDir, string projectPath, int ccbPort = 19998, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block", bool logSdk = false)
+        public CcbManager(string companionDir, string projectPath, int ccbPort = 19998, int mcpPort = 9877, int agentMcpPort = 9878, string? nodeExe = null, string? ccbToken = null, string? modelName = null, long budgetLimit = 0, string budgetAction = "Block", bool logSdk = false, IEnumerable<CustomMcpServerConfig>? customMcpServers = null)
         {
             _companionDir = companionDir;
             _projectPath = projectPath;
@@ -45,6 +50,7 @@ namespace RimWorldAgent.Core.CcbManager
             _budgetLimit = budgetLimit;
             _budgetAction = budgetAction;
             _logSdk = logSdk;
+            _customMcpServers = customMcpServers?.ToList() ?? new List<CustomMcpServerConfig>();
             _nodeExe = nodeExe ?? CompanionInstaller.FindNodeExe();
         }
 
@@ -75,15 +81,7 @@ namespace RimWorldAgent.Core.CcbManager
             Directory.CreateDirectory(_projectPath);
 
             var mcpJsonPath = Path.Combine(_projectPath, ".mcp.json");
-            var mcpConfig = new
-            {
-                mcpServers = new
-                {
-                    agent = new { type = "http", url = $"http://localhost:{_agentMcpPort}/mcp", timeout = 300000 }
-                }
-            };
-            var mcpJson = System.Text.Json.JsonSerializer.Serialize(mcpConfig, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(mcpJsonPath, mcpJson);
+            WriteMergedMcpJson(mcpJsonPath);
 
             var args = $"--import tsx/esm companion/companion.ts"
                 + $" --idle-timeout 30000"
@@ -181,6 +179,485 @@ namespace RimWorldAgent.Core.CcbManager
                 if (_process != null) { try { _process.Dispose(); } catch (Exception exDispose) { CoreLog.Info($"[CcbManager] Dispose _process 异常: {exDispose.GetType().Name}: {exDispose.Message}"); } _process = null; }
                 return false;
             }
+        }
+
+        private sealed class McpJsonState
+        {
+            public readonly Dictionary<string, JsonElement> RootFields = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, JsonElement> Servers = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private sealed class McpServerOutput
+        {
+            public string Type = "http";
+            public string Url = "";
+            public string Command = "npx";
+            public List<string> Args = new List<string>();
+            public Dictionary<string, string> Env = new Dictionary<string, string>(StringComparer.Ordinal);
+            public int Timeout = 300000;
+        }
+
+        private void WriteMergedMcpJson(string mcpJsonPath)
+        {
+            var state = ReadExistingMcpJson(mcpJsonPath);
+            var customServers = BuildCustomMcpServerMap();
+            var previouslyWrittenNames = ReadManagedMcpServerNames();
+
+            foreach (var managedName in previouslyWrittenNames)
+            {
+                var name = NormalizeMcpServerName(managedName);
+                if (!IsValidCustomMcpServerName(name)) continue;
+                if (!customServers.ContainsKey(name))
+                    state.Servers.Remove(name);
+            }
+
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                foreach (var field in state.RootFields)
+                {
+                    if (string.Equals(field.Key, "mcpServers", StringComparison.OrdinalIgnoreCase)) continue;
+                    writer.WritePropertyName(field.Key);
+                    field.Value.WriteTo(writer);
+                }
+
+                writer.WritePropertyName("mcpServers");
+                writer.WriteStartObject();
+                WriteMcpServer(writer, "agent", new McpServerOutput
+                {
+                    Type = "http",
+                    Url = $"http://localhost:{_agentMcpPort}/mcp",
+                    Timeout = 300000
+                });
+
+                foreach (var server in state.Servers)
+                {
+                    if (string.Equals(server.Key, "agent", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (customServers.ContainsKey(server.Key)) continue;
+                    writer.WritePropertyName(server.Key);
+                    server.Value.WriteTo(writer);
+                }
+
+                foreach (var server in customServers)
+                {
+                    state.Servers.TryGetValue(server.Key, out var existing);
+                    WriteMcpServer(writer, server.Key, server.Value, existing);
+                }
+
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+            File.WriteAllBytes(mcpJsonPath, stream.ToArray());
+            WriteManagedMcpServerNames(customServers.Keys);
+        }
+
+        private List<string> ReadManagedMcpServerNames()
+        {
+            var path = Path.Combine(_projectPath, ManagedMcpServerNamesFile);
+            if (!File.Exists(path)) return new List<string>();
+            try
+            {
+                return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path)) ?? new List<string>();
+            }
+            catch (Exception ex) when (ex is JsonException || ex is IOException || ex is UnauthorizedAccessException)
+            {
+                CoreLog.Warn($"[CcbManager] 读取托管 MCP 服务名失败: {FormatExceptionChain(ex)}");
+                return new List<string>();
+            }
+        }
+
+        private void WriteManagedMcpServerNames(IEnumerable<string> names)
+        {
+            var path = Path.Combine(_projectPath, ManagedMcpServerNamesFile);
+            try
+            {
+                var normalized = names
+                    .Select(NormalizeMcpServerName)
+                    .Where(IsValidCustomMcpServerName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                File.WriteAllText(path, JsonSerializer.Serialize(normalized, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                CoreLog.Warn($"[CcbManager] 写入托管 MCP 服务名失败: {FormatExceptionChain(ex)}");
+            }
+        }
+
+        private McpJsonState ReadExistingMcpJson(string mcpJsonPath)
+        {
+            var state = new McpJsonState();
+            if (!File.Exists(mcpJsonPath)) return state;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(mcpJsonPath));
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) return state;
+
+                foreach (var field in doc.RootElement.EnumerateObject())
+                {
+                    if (string.Equals(field.Name, "mcpServers", StringComparison.OrdinalIgnoreCase)
+                        && field.Value.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var server in field.Value.EnumerateObject())
+                            state.Servers[server.Name] = server.Value.Clone();
+                    }
+                    else
+                    {
+                        state.RootFields[field.Name] = field.Value.Clone();
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is JsonException || ex is IOException || ex is UnauthorizedAccessException)
+            {
+                CoreLog.Error($"[CcbManager] .mcp.json 解析失败，将重新生成: {FormatExceptionChain(ex)}");
+            }
+
+            return state;
+        }
+
+        private Dictionary<string, McpServerOutput> BuildCustomMcpServerMap()
+        {
+            var servers = new Dictionary<string, McpServerOutput>(StringComparer.OrdinalIgnoreCase);
+            foreach (var server in _customMcpServers)
+            {
+                if (server == null || !server.Enabled) continue;
+
+                var name = NormalizeMcpServerName(server.Name);
+                if (!IsValidCustomMcpServerName(name))
+                {
+                    CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务，服务名无效: {server.Name ?? "(null)"}");
+                    continue;
+                }
+
+                var type = NormalizeMcpServerType(server.Type);
+                if (type == null)
+                {
+                    CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务 {name}，类型无效: {server.Type ?? "(null)"}");
+                    continue;
+                }
+
+                if (servers.ContainsKey(name))
+                {
+                    CoreLog.Warn($"[CcbManager] 跳过重复的自定义 MCP 服务: {name}");
+                    continue;
+                }
+
+                var output = type == "stdio"
+                    ? BuildStdioMcpServer(name, server)
+                    : BuildUrlMcpServer(name, server, type);
+                if (output == null) continue;
+
+                servers[name] = output;
+            }
+            return servers;
+        }
+
+        private McpServerOutput? BuildUrlMcpServer(string name, CustomMcpServerConfig server, string type)
+        {
+            var url = (server.Url ?? "").Trim();
+            if (!IsHttpUrl(url))
+            {
+                CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务 {name}，URL 必须以 http:// 或 https:// 开头");
+                return null;
+            }
+
+            return new McpServerOutput
+            {
+                Type = type,
+                Url = url,
+                Timeout = server.Timeout > 0 ? server.Timeout : 300000
+            };
+        }
+
+        private McpServerOutput? BuildStdioMcpServer(string name, CustomMcpServerConfig server)
+        {
+            var command = string.IsNullOrWhiteSpace(server.Command) ? "npx" : server.Command.Trim();
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务 {name}，STDIO 启动命令不能为空");
+                return null;
+            }
+
+            if (!TryParseArgsText(server.ArgsText, out var args, out var argsError))
+            {
+                CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务 {name}，STDIO 命令参数无效: {argsError}");
+                return null;
+            }
+
+            if (!TryParseEnvText(server.EnvText, out var env, out var envError))
+            {
+                CoreLog.Warn($"[CcbManager] 跳过自定义 MCP 服务 {name}，环境变量格式无效: {envError}");
+                return null;
+            }
+
+            return new McpServerOutput
+            {
+                Type = "stdio",
+                Command = command,
+                Args = args,
+                Env = env,
+                Timeout = server.Timeout > 0 ? server.Timeout : 300000
+            };
+        }
+
+        private static void WriteMcpServer(Utf8JsonWriter writer, string name, McpServerOutput server, JsonElement? existing = null)
+        {
+            writer.WritePropertyName(name);
+            writer.WriteStartObject();
+
+            if (existing.HasValue && existing.Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var field in existing.Value.EnumerateObject())
+                {
+                    if (IsControlledMcpServerField(field.Name)) continue;
+                    writer.WritePropertyName(field.Name);
+                    field.Value.WriteTo(writer);
+                }
+            }
+
+            if (server.Type == "stdio")
+            {
+                writer.WriteString("type", "stdio");
+                writer.WriteString("command", server.Command);
+                if (server.Args.Count > 0)
+                {
+                    writer.WritePropertyName("args");
+                    writer.WriteStartArray();
+                    foreach (var arg in server.Args)
+                        writer.WriteStringValue(arg);
+                    writer.WriteEndArray();
+                }
+                if (server.Env.Count > 0)
+                {
+                    writer.WritePropertyName("env");
+                    writer.WriteStartObject();
+                    foreach (var item in server.Env)
+                        writer.WriteString(item.Key, item.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteNumber("timeout", server.Timeout);
+            }
+            else
+            {
+                writer.WriteString("type", server.Type);
+                writer.WriteString("url", server.Url);
+                writer.WriteNumber("timeout", server.Timeout);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        private static bool IsControlledMcpServerField(string name)
+        {
+            return string.Equals(name, "type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "url", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "command", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "args", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "env", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "timeout", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeMcpServerName(string? name) => (name ?? "").Trim();
+
+        private static string? NormalizeMcpServerType(string? type)
+        {
+            var normalized = (type ?? "http").Trim().ToLowerInvariant();
+            if (normalized == "http" || normalized == "sse") return normalized;
+            if (normalized == "npx" || normalized == "stdio") return "stdio";
+            return null;
+        }
+
+        private static bool TryParseArgsText(string? text, out List<string> args, out string error)
+        {
+            args = new List<string>();
+            error = "";
+            var trimmed = (text ?? "").Trim();
+            if (string.IsNullOrEmpty(trimmed))
+                return true;
+
+            if (trimmed.StartsWith("["))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<List<string>>(trimmed);
+                    if (parsed == null)
+                        return true;
+                    args = parsed.Where(arg => !string.IsNullOrWhiteSpace(arg)).ToList();
+                    return true;
+                }
+                catch (Exception ex) when (ex is JsonException || ex is NotSupportedException)
+                {
+                    error = $"JSON 参数数组解析失败: {ex.GetType().Name}: {ex.Message}";
+                    return false;
+                }
+            }
+
+            var current = new StringBuilder();
+            var tokenStarted = false;
+            var quote = '\0';
+            for (var i = 0; i < trimmed.Length; i++)
+            {
+                var c = trimmed[i];
+                if (quote != '\0')
+                {
+                    if (c == '\\' && i + 1 < trimmed.Length && (trimmed[i + 1] == quote || trimmed[i + 1] == '\\'))
+                    {
+                        current.Append(trimmed[i + 1]);
+                        i++;
+                    }
+                    else if (c == quote)
+                    {
+                        quote = '\0';
+                    }
+                    else
+                    {
+                        current.Append(c);
+                    }
+                    tokenStarted = true;
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(c))
+                {
+                    if (!tokenStarted) continue;
+                    args.Add(current.ToString());
+                    current.Length = 0;
+                    tokenStarted = false;
+                    continue;
+                }
+
+                if (c == '\'' || c == '"')
+                {
+                    quote = c;
+                    tokenStarted = true;
+                    continue;
+                }
+
+                if (c == '\\' && i + 1 < trimmed.Length && char.IsWhiteSpace(trimmed[i + 1]))
+                {
+                    current.Append(trimmed[i + 1]);
+                    i++;
+                }
+                else
+                {
+                    current.Append(c);
+                }
+                tokenStarted = true;
+            }
+
+            if (quote != '\0')
+            {
+                error = "引号未闭合";
+                return false;
+            }
+            if (tokenStarted) args.Add(current.ToString());
+            args = args.Where(arg => !string.IsNullOrWhiteSpace(arg)).ToList();
+            return true;
+        }
+
+        private static bool TryParseEnvText(string? text, out Dictionary<string, string> env, out string error)
+        {
+            env = new Dictionary<string, string>(StringComparer.Ordinal);
+            error = "";
+            var trimmed = (text ?? "").Trim();
+            if (string.IsNullOrEmpty(trimmed)) return true;
+
+            if (trimmed.StartsWith("{"))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(trimmed);
+                    if (parsed == null) return true;
+                    foreach (var item in parsed)
+                    {
+                        if (!IsValidEnvKey(item.Key))
+                        {
+                            error = $"环境变量名无效: {item.Key}";
+                            return false;
+                        }
+                        env[item.Key] = item.Value ?? "";
+                    }
+                    return true;
+                }
+                catch (Exception ex) when (ex is JsonException || ex is NotSupportedException)
+                {
+                    error = $"JSON 环境变量解析失败: {ex.GetType().Name}: {ex.Message}";
+                    return false;
+                }
+            }
+
+            var lines = trimmed.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            foreach (var rawLine in lines)
+            {
+                var line = rawLine.Trim();
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var separator = line.IndexOf('=');
+                if (separator < 0)
+                {
+                    error = $"缺少 '=': {line}";
+                    return false;
+                }
+                var key = line.Substring(0, separator).Trim();
+                var value = line.Substring(separator + 1).Trim();
+                if (!IsValidEnvKey(key))
+                {
+                    error = $"环境变量名无效: {key}";
+                    return false;
+                }
+                if (env.ContainsKey(key))
+                {
+                    error = $"环境变量重复: {key}";
+                    return false;
+                }
+                env[key] = value;
+            }
+            return true;
+        }
+
+        private static bool IsValidEnvKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            var first = key[0];
+            if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_')) return false;
+            for (var i = 1; i < key.Length; i++)
+            {
+                var c = key[i];
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')
+                    continue;
+                return false;
+            }
+            return true;
+        }
+
+        private static bool IsValidCustomMcpServerName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            if (string.Equals(name, "agent", StringComparison.OrdinalIgnoreCase)) return false;
+            for (var i = 0; i < name.Length; i++)
+            {
+                var c = name[i];
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.')
+                    continue;
+                return false;
+            }
+            return true;
+        }
+
+        private static bool IsHttpUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+            return uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps;
+        }
+
+        private static string FormatExceptionChain(Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+                message += $" ← {inner.GetType().Name}: {inner.Message}";
+            return message;
         }
 
         public async Task<bool> WaitReadyAsync(int waitMs = 15000)

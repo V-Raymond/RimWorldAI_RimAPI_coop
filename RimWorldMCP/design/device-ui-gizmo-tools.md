@@ -48,7 +48,7 @@
 `execute_device_action` 重新定位并选中设备，然后重新枚举 UI/Gizmo：
 
 - `Command_Toggle`：默认允许执行。无 `value` 时切换；传 boolean 时仅在目标状态与当前状态不一致时调用 `toggleAction()`。
-- `Command_Action`：不盲目执行。首版只展示或执行明确安全 allowlist；复杂弹窗、目标选择、发射目的地选择等仅展示，不自动点击。
+- `Command_Action`：不盲目执行。仅执行明确安全 allowlist（温度调节/重置、发射台建造运输舱、运输器组选择导航）；复杂弹窗、目标选择、发射目的地选择等仅展示，不自动点击。
 - 参数型操作：不模拟鼠标、不拖动 UI 滑条，使用 adapter 执行 UI 最终业务逻辑。
 
 ## 首版 adapter

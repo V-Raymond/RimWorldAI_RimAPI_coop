@@ -46,6 +46,9 @@ namespace RimWorldMCP.Tools
                     if (map == null) return ToolResult.Error("当前没有可用地图。");
 
                     var targets = DeviceToolHelper.ResolveTargets(map, args.Value);
+                    var missingIds = DeviceToolHelper.GetMissingThingIdsMessage(targets);
+                    if (!string.IsNullOrEmpty(missingIds))
+                        return ToolResult.Error(missingIds);
                     if (targets.Things.Count == 0)
                         return ToolResult.Error("没有找到目标设备。请检查 thing_id、thing_ids 或坐标。");
 
@@ -96,8 +99,20 @@ namespace RimWorldMCP.Tools
             var command = commands.FirstOrDefault(c => DeviceToolHelper.MatchesActionId(c, actionId));
             if (command == null) return ToolResult.Error($"找不到 UI Action: {actionId}。请重新调用 get_device_info 获取最新 action_id。");
             if (command.Disabled) return ToolResult.Error($"UI Action 已禁用: {command.DisabledReason}");
+            if (command.Gizmo is not Command_Action action) return ToolResult.Error($"{actionId} 不是 Command_Action。");
+            if (!DeviceToolHelper.IsSafeCommandAction(command))
+                return ToolResult.Error($"为避免误打开弹窗/目标选择，当前不直接执行 Command_Action: {command.Label}。请使用 get_device_info 输出的 adapter action_id，或为该按钮新增安全 allowlist。");
+            if (action.action == null)
+                return ToolResult.Error($"Command_Action 没有可执行委托: {command.Label}");
 
-            return ToolResult.Error($"为避免误打开弹窗/目标选择，首版不直接执行 Command_Action: {command.Label}。请使用 get_device_info 输出的 adapter action_id，或为该按钮新增安全 adapter。");
+            action.action();
+
+            var sb = new StringBuilder();
+            sb.AppendLine("## UI Action 执行完成");
+            sb.AppendLine($"- 设备: {command.Thing.LabelCap} (ID:{command.Thing.thingIDNumber})");
+            sb.AppendLine($"- 操作: {command.Label}");
+            sb.AppendLine("- 执行方式: 安全 Command_Action allowlist");
+            return ToolResult.Success(sb.ToString());
         }
 
         private static ToolResult ExecuteAdapter(DeviceToolHelper.ResolvedTargets targets, string actionId, JsonElement args)

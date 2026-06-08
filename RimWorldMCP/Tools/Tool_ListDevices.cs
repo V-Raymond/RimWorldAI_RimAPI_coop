@@ -75,7 +75,7 @@ namespace RimWorldMCP.Tools
                         .Where(s => s.Length > 0)
                         .ToList();
 
-                    var devices = new List<(Thing thing, bool hasUi)>();
+                    var devices = new List<Thing>();
                     foreach (var thing in DeviceToolHelper.EnumerateDevices(map))
                     {
                         if (!string.IsNullOrEmpty(defName) && !thing.def.defName.Equals(defName, StringComparison.OrdinalIgnoreCase)) continue;
@@ -89,10 +89,12 @@ namespace RimWorldMCP.Tools
                         if (compFilters.Count > 0 && !compFilters.All(c => DeviceToolHelper.HasCompNamed(thing, c))) continue;
                         if (!string.IsNullOrEmpty(actionId) && !DeviceToolHelper.HasAdapterAction(thing, actionId)) continue;
 
-                        var commands = DeviceToolHelper.GetDeviceCommands(new List<Thing> { thing });
-                        var ui = commands.Count > 0;
-                        if (hasUi && !ui) continue;
-                        devices.Add((thing, ui));
+                        if (hasUi)
+                        {
+                            var commands = DeviceToolHelper.GetDeviceCommands(new List<Thing> { thing });
+                            if (commands.Count == 0) continue;
+                        }
+                        devices.Add(thing);
                     }
 
                     if (devices.Count == 0)
@@ -100,8 +102,8 @@ namespace RimWorldMCP.Tools
 
                     var total = devices.Count;
                     var paged = devices
-                        .OrderBy(d => d.thing.def.defName)
-                        .ThenBy(d => d.thing.thingIDNumber)
+                        .OrderBy(d => d.def.defName)
+                        .ThenBy(d => d.thingIDNumber)
                         .Skip((page - 1) * pageSize)
                         .Take(pageSize)
                         .ToList();
@@ -110,8 +112,9 @@ namespace RimWorldMCP.Tools
                     sb.AppendLine($"## 设备列表 共 {total} 条");
                     sb.AppendLine("| ID | 名称 | defName | 位置 | 关键组件 | adapter操作 | UI | ");
                     sb.AppendLine("|---:|---|---|---|---|---|---|");
-                    foreach (var (thing, ui) in paged)
+                    foreach (var thing in paged)
                     {
+                        var ui = hasUi || DeviceToolHelper.GetDeviceCommands(new List<Thing> { thing }).Count > 0;
                         var line = DeviceToolHelper.FormatDeviceSummary(thing).TrimEnd('|');
                         sb.AppendLine($"{line}| {DeviceToolHelper.YesNo(ui)} |");
                     }
