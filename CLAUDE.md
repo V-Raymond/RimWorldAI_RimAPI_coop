@@ -12,7 +12,7 @@ RimWorldAI/
 │   └── SseTransport.cs       SSE + HTTP
 
 ├── RimWorldMCP/              ← 游戏 Mod (net472)
-│   ├── Tools/                112 个游戏 Tool
+│   ├── Tools/                121 个游戏 Tool
 │   ├── MCP Server :9877      SSE + Streamable HTTP
 │   ├── Harmony/              事件拦截 → NotificationBus
 │   ├── resource/About/       MOD 元数据 + Steam BBCode

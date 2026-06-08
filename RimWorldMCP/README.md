@@ -85,10 +85,11 @@ L01=#1.14D1.14#1
 
 ## 工具清单
 
-### 通用查询 (7)
+### 通用查询 (8)
 | `get_game_context` | 游戏全局状态快照 |
 | `get_resources` | 资源库存报告 |
 | `check_colony` | 殖民地提醒（空闲/崩溃/流血/食物/防御） |
+| `get_work_todos` | 汇总当前待办工作列表 |
 | `toggle_pause` | 切换游戏暂停状态 |
 | `advance_tick` | 让游戏运行指定 tick 数后暂停返回状态 |
 | `get_mcp_latency` | 探查 Agent ↔ 游戏延迟 |

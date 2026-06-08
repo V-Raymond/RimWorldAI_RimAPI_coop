@@ -249,15 +249,16 @@ mklink /D F:\SteamLibrary\steamapps\common\RimWorld\Mods\RimWorldMCP F:\RiderPro
 
 ## Tool 清单（含 I18N 中文名 + 可达性检测）
 
-中文名称参见 `publish/Languages/ChineseSimplified/Keyed/RimWorldMCP_Tools.xml`。以下为全部 105 个工具。
+中文名称参见 `publish/Languages/ChineseSimplified/Keyed/RimWorldMCP_Tools.xml`。以下为全部 121 个工具。
 
-### 通用查询 (6)
+### 通用查询 (10)
 | Tool | 说明 | 数据源 |
 |------|------|--------|
 | `get_game_context` | 游戏全局状态快照 | `Find.CurrentMap`, `Find.TickManager`, `Find.ResearchManager` |
 | `get_session_id` | 获取当前游戏 MCP 会话 ID（Scribe 持久化 GUID） | `GameComponent_McpServer.CurrentSessionId` |
 | `get_resources` | 资源库存报告 | `map.resourceCounter.AllCountedAmounts` |
 | `check_colony` | 殖民地提醒（空闲/崩溃/流血/食物/防御） | `PawnsFinder`, `map.wealthWatcher` |
+| `get_work_todos` | 汇总当前待办工作列表（建造、标记、工作单、医疗、囚犯、研究、搬运、空闲） | `map.listerThings`, `designationManager`, `billStack`, `mapPawns` |
 | `toggle_pause` | 切换游戏暂停状态，恢复时设为最大速度 | `Find.TickManager.CurTimeSpeed` (入队) |
 | `advance_tick` | 让游戏运行指定 tick 数后暂停返回状态，用于观察结果避免过度思考 | `Find.TickManager` (入队) |
 | `get_mcp_latency` | 探查 Agent 与游戏之间的 MCP 延迟 | `McpCommandQueue.DispatchAsync` 排队计时 |
